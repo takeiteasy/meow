@@ -1,7 +1,7 @@
 (in-package #:meow)
 
 (defservice agent ()
-  ((parent :initarg :parent :reader agent-parent)
+  ((parent :initarg :parent :initform nil :reader agent-parent)
    (ref :initarg :ref :initform nil :reader agent-ref)
    (done :initform nil))
   (:default-initargs :name nil))
@@ -17,8 +17,8 @@
 (defmethod %dispatch :after ((agent agent) message)
   (declare (ignore message))
   (a:when-let ((done (slot-value agent 'done)))
-    (send (agent-parent agent)
-          (list :agent-done (agent-ref agent) (self) (first done)))
+    (a:when-let ((parent (agent-parent agent)))
+      (send parent (list :agent-done (agent-ref agent) (self) (first done))))
     (exit :done)))
 
 (defun delegate (context class &rest initargs &key ref name &allow-other-keys)

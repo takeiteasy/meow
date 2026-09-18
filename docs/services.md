@@ -47,8 +47,9 @@ Specialise any of these generic functions. Each has a no-op default.
 ```
 
 `(start-service s &key registry debug)` returns the process once the
-service is registered and subscribed. It signals `already-registered` if
-the name is taken. `ready` always runs later, on the service's own process.
+service is registered (unless its name is nil) and subscribed. It signals
+`already-registered` if the name is taken. `ready` always runs later, on
+the service's own process.
 
 The service keeps the registry and debug flag it was started with.
 `registry` defaults to the caller's `*registry*` and `debug` to
@@ -84,5 +85,5 @@ A service stops when it is sent `stop`, calls `exit`, or takes the
 `stop-service` restart. Then:
 
 1. `dispose` runs with the exit reason.
-2. The name is unregistered, and dependants get `dep-down` with that same
+2. The name, if any, is unregistered, and dependants get `dep-down` with that same
    reason.
