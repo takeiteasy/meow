@@ -1,9 +1,14 @@
 (in-package #:meow)
 
+(defvar *debug-services* t
+  "When true, an unhandled error in a service enters the debugger; otherwise
+the service stops. START-SERVICE captures the value.")
+
 (defclass service ()
   ((name :initarg :name :initform nil :reader service-name)
    (registry :initform nil :reader service-registry)
    (process :initform nil :reader service-process)
+   (debug :initform nil)
    (deps :initform '())
    (status :initform :waiting)))
 
@@ -105,23 +110,58 @@ added first so it runs before the registry's unregister hook."
     (dolist (name (service-dependencies service))
       (subscribe name :registry registry))))
 
-;;; TODO: an error in HANDLE stops the service; add skip-message and
-;;; stop-service restarts once supervisors exist.
-(defun %service-loop (service)
-  (%maybe-ready service)
-  (loop (multiple-value-bind (tag a b) (%message-parts (receive))
-          (case tag
-            (:call (when (reply-cell-p a)
-                     (reply a (handle service b))))
-            (:cast (handle service a))
-            (:stop (exit a))
-            (:registered (%dep-up service a b))
-            (:unregistered (%dep-lost service a b))))))
+(defun skip-message (&optional condition)
+  "Invoke the SKIP-MESSAGE restart: drop the message being handled and keep
+the service running. A skipped call returns (values nil (:error condition))."
+  (a:when-let ((restart (find-restart 'skip-message condition)))
+    (invoke-restart restart condition)))
 
-(defun start-service (service &key (registry *registry*))
+(defun stop-service (&optional condition)
+  "Invoke the STOP-SERVICE restart: exit with (:error condition)."
+  (a:when-let ((restart (find-restart 'stop-service condition)))
+    (invoke-restart restart condition)))
+
+(defun %guard (service message function)
+  "Call FUNCTION, handling MESSAGE, with the service restarts established.
+An unhandled error enters the debugger or stops SERVICE."
+  (let ((failure nil))
+    (restart-case
+        (handler-bind ((error (lambda (c)
+                                (setf failure c)
+                                (if (slot-value service 'debug)
+                                    (invoke-debugger c)
+                                    (stop-service c)))))
+          (funcall function))
+      (skip-message (&optional (condition failure))
+        :report "Drop the message and keep the service running."
+        (multiple-value-bind (tag cell) (%message-parts message)
+          (when (and (eq tag :call) (reply-cell-p cell))
+            (%settle cell :error condition))))
+      (stop-service (&optional (condition failure))
+        :report "Stop the service."
+        (exit (list :error condition))))))
+
+(defun %dispatch (service message)
+  (multiple-value-bind (tag a b) (%message-parts message)
+    (case tag
+      (:call (when (reply-cell-p a)
+               (reply a (handle service b))))
+      (:cast (handle service a))
+      (:stop (exit a))
+      (:registered (%dep-up service a b))
+      (:unregistered (%dep-lost service a b)))))
+
+(defun %service-loop (service)
+  (%guard service nil (lambda () (%maybe-ready service)))
+  (loop (let ((message (receive)))
+          (%guard service message (lambda () (%dispatch service message))))))
+
+(defun start-service (service &key (registry *registry*)
+                                   (debug *debug-services*))
   "Run SERVICE in a new process. Returns once it is registered and
 subscribed. Signals ALREADY-REGISTERED if its name is taken."
-  (setf (slot-value service 'registry) registry)
+  (setf (slot-value service 'registry) registry
+        (slot-value service 'debug) debug)
   (let* ((started (bt2:make-semaphore :name "service start"))
          (failure nil)
          (process (spawn (lambda ()

@@ -53,6 +53,7 @@ no lock held.
 | `(values reply nil)` | Answered. |
 | `(values nil :timeout)` | No answer in time. `p` keeps running and its late reply is discarded. |
 | `(values nil (:down reason))` | `p` exited before answering, or had already exited. |
+| `(values nil (:error condition))` | A [service](services.md#failure-model) skipped the message after an error. |
 
 Wire format for processes that run their own `receive` loop:
 `(:call cell msg)`, answered with `(reply cell value)`; `(:cast msg)`; and

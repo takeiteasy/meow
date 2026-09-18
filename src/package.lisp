@@ -18,4 +18,9 @@
    #:service #:defservice #:start-service
    #:service-name #:service-registry #:service-process #:service-ready-p
    #:service-dependencies #:dependency
-   #:metadata #:ready #:dep-down #:handle #:dispose))
+   #:metadata #:ready #:dep-down #:handle #:dispose
+   ;; failure model
+   #:*debug-services* #:skip-message #:stop-service
+   ;; contexts
+   #:context #:context-intensity #:context-period
+   #:mount #:unmount #:children))

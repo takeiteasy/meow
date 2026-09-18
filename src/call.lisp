@@ -22,8 +22,9 @@
 (defun call (process message &key (timeout 5))
   "Send MESSAGE to PROCESS as (:call cell message) and wait for the reply.
 Returns (values reply nil), (values nil :timeout) after TIMEOUT seconds (nil
-waits forever), or (values nil (:down reason)) if PROCESS exits first. On
-timeout PROCESS keeps running and its eventual reply is discarded."
+waits forever), (values nil (:down reason)) if PROCESS exits first, or
+(values nil (:error condition)) if a service skipped the message. On timeout
+PROCESS keeps running and its eventual reply is discarded."
   (let* ((cell (%make-reply-cell))
          (hook (add-exit-hook process (lambda (process reason)
                                         (declare (ignore process))
@@ -41,6 +42,7 @@ timeout PROCESS keeps running and its eventual reply is discarded."
            (ecase (reply-cell-state cell)
              (:value (values (reply-cell-value cell) nil))
              (:down (values nil (list :down (reply-cell-value cell))))
+             (:error (values nil (list :error (reply-cell-value cell))))
              (:pending (values nil :timeout))))
       (remove-exit-hook process hook))))
 

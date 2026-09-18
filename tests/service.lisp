@@ -47,7 +47,9 @@
         (:sleep (sleep (second message)) :slept))
       (ecase message
         (:ping :pong)
-        (:boom (error "boom")))))
+        (:boom (error "boom"))
+        (:skip (handler-bind ((error #'meow:skip-message))
+                 (error "skipped"))))))
 
 (defun start (class &rest initargs)
   (let ((service (apply #'make-instance class :reporter (meow:self) initargs)))
@@ -199,3 +201,24 @@
                                   (meow:names :registry registry))))
       (stop-and-join c)
       (stop-and-join p))))
+
+(test skip-message-keeps-service-running
+  (with-fresh-registry ()
+    (let ((p (start 'provider)))
+      (destructuring-bind (value (tag condition))
+          (multiple-value-list (meow:call p :skip))
+        (is (null value))
+        (is (eq :error tag))
+        (is (typep condition 'simple-error)))
+      (is (eq :pong (meow:call p :ping)))
+      (stop-and-join p))))
+
+(test debug-flag-is-captured-at-start
+  (with-fresh-registry ()
+    (let ((p (start 'provider))
+          (meow:*debug-services* t))
+      (is (eq :pong (meow:call p :ping)))
+      (multiple-value-bind (value status) (meow:call p :boom)
+        (is (null value))
+        (is (eq :down (first status))))
+      (join p))))

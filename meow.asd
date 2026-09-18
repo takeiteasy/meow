@@ -11,7 +11,8 @@
                (:file "process")
                (:file "call")
                (:file "registry")
-               (:file "service"))
+               (:file "service")
+               (:file "context"))
   :in-order-to ((test-op (test-op "meow/tests"))))
 
 (defsystem "meow/tests"
@@ -25,7 +26,8 @@
                (:file "process")
                (:file "call")
                (:file "registry")
-               (:file "service"))
+               (:file "service")
+               (:file "context"))
   :perform (test-op (o c)
              (unless (symbol-call :fiveam :run! :meow)
                (error "meow tests failed"))))

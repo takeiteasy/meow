@@ -7,7 +7,8 @@
 
 (defmacro with-fresh-registry ((&optional (var (gensym))) &body body)
   `(let* ((,var (make-instance 'meow:registry))
-          (meow:*registry* ,var))
+          (meow:*registry* ,var)
+          (meow:*debug-services* nil))
      (declare (ignorable ,var))
      (meow:with-process (me)
        ,@body)))

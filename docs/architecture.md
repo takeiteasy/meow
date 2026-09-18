@@ -9,8 +9,8 @@ application-specific code.
 ┌───────────────────────────────────────────┐
 │ agent supervisor (delegation)             │  planned
 │ hot reload · config · events · effects    │  planned
-│ context · supervisor                      │  planned
 ├───────────────────────────────────────────┤
+│ context · supervisor                      │  built
 │ service                                   │  built
 │ registry                                  │  built
 │ process · mailbox · call/cast             │  built
@@ -26,6 +26,7 @@ application-specific code.
   process, so it cannot crash on its own.
 - A [service](services.md) is a process that registers itself and waits
   for its dependencies.
+- A [context](contexts.md) is a service that supervises other services.
 - Threads are never killed. Processes stop cooperatively.
 
 ## Implementations

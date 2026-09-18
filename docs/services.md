@@ -45,20 +45,42 @@ Specialise any of these generic functions. Each has a no-op default.
 (stop *p*)
 ```
 
-`(start-service s &key registry)` returns the process once the service is
-registered and subscribed. It signals `already-registered` if the name is
-taken. `ready` always runs later, on the service's own process.
+`(start-service s &key registry debug)` returns the process once the
+service is registered and subscribed. It signals `already-registered` if
+the name is taken. `ready` always runs later, on the service's own process.
 
-The service keeps the registry it was started with and uses it for
-everything. `registry` defaults to the caller's `*registry*`.
+The service keeps the registry and debug flag it was started with.
+`registry` defaults to the caller's `*registry*` and `debug` to
+`*debug-services*`.
+
+To have a service restarted when it fails, mount it on a
+[context](contexts.md) instead.
 
 `call`, `cast` and `stop` work as they do for `serve`.
 
+## Failure model
+
+Every message, as well as `ready` and `dep-down`, runs with two restarts
+available:
+
+| Restart | Effect |
+|---|---|
+| `skip-message` | Drop the message and keep running. A skipped `call` returns `(values nil (:error condition))`. |
+| `stop-service` | Stop with exit reason `(:error condition)`. |
+
+`(skip-message c)` and `(stop-service c)` invoke them, so a handler inside
+`handle` can pick one. An error that nothing handles enters the debugger if
+the service was started with `debug` true (the default), and otherwise
+invokes `stop-service`.
+
+```lisp
+(setf meow:*debug-services* nil)   ; production: failed services stop
+```
+
 ## Stopping
 
-A service stops when it is sent `stop` or `exit`s, or when `handle`
-signals an error. Its exit reason is `(:error condition)` in the error case.
-Then:
+A service stops when it is sent `stop`, calls `exit`, or takes the
+`stop-service` restart. Then:
 
 1. `dispose` runs with the exit reason.
 2. The name is unregistered, and dependants get `dep-down` with that same
