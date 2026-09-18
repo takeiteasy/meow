@@ -93,6 +93,19 @@ fail, anything else is used as the exit reason."
     (is (registry-table-empty-p registry 'meow::subscribers))
     (is (registry-table-empty-p registry 'meow::subscriber-hooks))))
 
+(test subscribe-outside-a-process-signals
+  (let ((meow:*registry* (make-instance 'meow:registry)))
+    (is (eq :signalled
+            (bt2:join-thread
+             (bt2:make-thread (lambda ()
+                                (handler-case (meow:subscribe :svc)
+                                  (error () :signalled)))))))
+    (is (eq :signalled
+            (bt2:join-thread
+             (bt2:make-thread (lambda ()
+                                (handler-case (meow:unsubscribe :svc)
+                                  (error () :signalled)))))))))
+
 (test unsubscribe-stops-notifications
   (with-fresh-registry (registry)
     (meow:subscribe :svc)

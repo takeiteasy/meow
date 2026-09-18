@@ -16,7 +16,7 @@ binding is per thread: a spawned process does not inherit a rebinding.
 | `(lookup name)` | `(values proc props)`, or nil. |
 | `(names)` | Every registered name. |
 | `(await name &key timeout)` | The process, or `(values nil :timeout)`. A nil timeout waits forever. |
-| `(subscribe name &key process)` | `t`, or nil if `process` has exited. `process` defaults to `(self)`. |
+| `(subscribe name &key process)` | `t`, or nil if `process` has exited. `process` defaults to `(self)`, which must exist. |
 | `(unsubscribe name &key process)` | nil |
 
 Names compare with `equal`. Props are a plist.

@@ -96,7 +96,7 @@ ALREADY-REGISTERED if a live process holds NAME. Returns t, or
                      timeout)
         (values nil :timeout))))
 
-(defun subscribe (name &key (process (self)) (registry *registry*))
+(defun subscribe (name &key (process (%require-self)) (registry *registry*))
   "Send PROCESS (:registered name owner) and (:unregistered name reason) for
 NAME. If NAME is already registered, the first message is sent before this
 returns. Returns nil if PROCESS has already exited."
@@ -114,7 +114,7 @@ returns. Returns nil if PROCESS has already exited."
       (send process (list :registered name (entry-process entry))))
     t))
 
-(defun unsubscribe (name &key (process (self)) (registry *registry*))
+(defun unsubscribe (name &key (process (%require-self)) (registry *registry*))
   (%with-registry-lock (registry)
     (let ((remaining (remove process (gethash name subscribers))))
       (if remaining

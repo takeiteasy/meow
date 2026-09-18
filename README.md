@@ -2,9 +2,10 @@
 
 **M**ount **E**verything, **O**rder **W**henever
 
-A Cordis-style plugin/service core for Common Lisp. Services are CLOS
-classes that can be mounted in any order; each one becomes ready once its
-dependencies appear in the registry. Runs on SBCL and ECL.
+A Cordis-style plugin/service core for Common Lisp, in early development.
+So far it provides processes (a thread plus a mailbox) with call/cast and a
+name registry with subscribe and await. Services, supervision and the rest
+are planned. Runs on SBCL and ECL.
 
 ## Docs
 
