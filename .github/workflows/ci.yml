@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lisp: [sbcl, ecl]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Lisp
+        run: sudo apt-get update && sudo apt-get install -y sbcl ${{ matrix.lisp }}
+
+      - name: Install Quicklisp
+        run: |
+          curl -sSfLO https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --non-interactive --no-userinit --load quicklisp.lisp \
+               --eval '(quicklisp-quickstart:install)'
+          ln -s "$GITHUB_WORKSPACE" ~/quicklisp/local-projects/meow
+
+      - name: Test
+        run: scripts/test.sh ${{ matrix.lisp }}
