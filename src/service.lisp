@@ -94,8 +94,9 @@ the service stops. START-SERVICE captures the value.")
         (dep-down service name reason)))))
 
 (defun %init-service (service)
-  "Register SERVICE and subscribe to its dependencies. The dispose hook is
-added first so it runs before the registry's unregister hook."
+  "Register SERVICE, unless its name is nil, and subscribe to its
+dependencies. The dispose hook is added first so it runs before the
+registry's unregister hook."
   (let* ((process (self))
          (registry (service-registry service))
          (hook (add-exit-hook process (lambda (process reason)
@@ -105,8 +106,9 @@ added first so it runs before the registry's unregister hook."
     (handler-bind ((error (lambda (e)
                             (declare (ignore e))
                             (remove-exit-hook process hook))))
-      (register (service-name service) process
-                :props (metadata service) :registry registry))
+      (when (service-name service)
+        (register (service-name service) process
+                  :props (metadata service) :registry registry)))
     (dolist (name (service-dependencies service))
       (subscribe name :registry registry))))
 
@@ -141,7 +143,9 @@ An unhandled error enters the debugger or stops SERVICE."
         :report "Stop the service."
         (exit (list :error condition))))))
 
-(defun %dispatch (service message)
+(defgeneric %dispatch (service message))
+
+(defmethod %dispatch ((service service) message)
   (multiple-value-bind (tag a b) (%message-parts message)
     (case tag
       (:call (when (reply-cell-p a)
@@ -159,7 +163,8 @@ An unhandled error enters the debugger or stops SERVICE."
 (defun start-service (service &key (registry *registry*)
                                    (debug *debug-services*))
   "Run SERVICE in a new process. Returns once it is registered and
-subscribed. Signals ALREADY-REGISTERED if its name is taken."
+subscribed. A service named nil is not registered. Signals
+ALREADY-REGISTERED if its name is taken."
   (setf (slot-value service 'registry) registry
         (slot-value service 'debug) debug)
   (let* ((started (bt2:make-semaphore :name "service start"))

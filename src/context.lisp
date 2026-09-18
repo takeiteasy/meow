@@ -33,10 +33,11 @@ process. RESTART is :permanent, :transient or :temporary."
         value
         (error value))))
 
-(defun unmount (context name &key (timeout 5))
-  "Stop child NAME of CONTEXT without restarting it, waiting up to TIMEOUT
-seconds for it to exit. Returns t, or nil if NAME is not mounted."
-  (%context-call context (list '%unmount name timeout)))
+(defun unmount (context child &key (timeout 5))
+  "Stop CHILD of CONTEXT, a name or process, without restarting it, waiting
+up to TIMEOUT seconds for it to exit. Returns t, or nil if CHILD is not
+mounted."
+  (%context-call context (list '%unmount child timeout)))
 
 (defun children (context)
   "A list of (name process restart) for each child, in mount order."
@@ -78,9 +79,15 @@ seconds for it to exit. Returns t, or nil if NAME is not mounted."
         (list :ok process))
     (error (e) (list :error e))))
 
-(defun %unmount (context name timeout)
+(defun %find-child (context target)
+  (when target
+    (find target (slot-value context 'children)
+          :key (if (typep target 'process) #'child-process #'child-name)
+          :test #'equal)))
+
+(defun %unmount (context target timeout)
   (with-slots (children) context
-    (a:when-let ((child (find name children :key #'child-name :test #'equal)))
+    (a:when-let ((child (%find-child context target)))
       (a:deletef children child)
       (%stop-and-wait (child-process child) timeout)
       t)))

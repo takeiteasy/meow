@@ -17,7 +17,8 @@ services can be started in any order.
 
 - `(:depends-on name...)`: names to wait for. Subclasses inherit them.
 - `(:name name)`: the registration name. Defaults to the class name. It can
-  also be set per instance with the `:name` initarg.
+  also be set per instance with the `:name` initarg. A service named nil is
+  not registered.
 
 Names compare with `equal`, so `foo::provider` and `bar::provider` are
 different names.

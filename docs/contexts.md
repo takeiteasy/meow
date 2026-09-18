@@ -19,11 +19,12 @@ child.
 | Call | Purpose |
 |---|---|
 | `(mount ctx class &rest initargs &key restart)` | Start a service of `class` and return its process. Start errors, such as `already-registered`, are signalled in the caller. |
-| `(unmount ctx name &key (timeout 5))` | Stop child `name` without restarting it, waiting for `dispose` and unregistration to finish. Returns `t`, or nil if `name` isn't mounted. |
+| `(unmount ctx child &key (timeout 5))` | Stop `child`, a name or process, without restarting it, waiting for `dispose` and unregistration to finish. Returns `t`, or nil if `child` isn't mounted. |
 | `(children ctx)` | `(name process restart)` for each child, in mount order. |
 
 Children use the context's registry and debug flag. A child's name is its
-service name.
+service name, or nil for an unregistered child such as a
+[delegated agent](delegation.md).
 
 ## Restarts
 

@@ -2,11 +2,12 @@
 
 **M**ount **E**verything, **O**rder **W**henever
 
-A Cordis-style plugin/service core for Common Lisp, in early development.
-So far it provides processes (a thread plus a mailbox) with call/cast, a
-name registry with subscribe and await, CLOS services that wait for their
-dependencies in any mount order, and contexts that supervise and restart
-them. Events, effects and hot reload are planned. Runs on SBCL and ECL.
+A Cordis-style plugin/service core for Common Lisp, in early
+development. So far it provides processes (a thread plus a mailbox) with
+call/cast, a name registry with subscribe and await, CLOS services that
+wait for their dependencies in any mount order, contexts that supervise
+and restart them, and short-lived agents delegated to a context. Events,
+effects and hot reload are planned. Runs on SBCL and ECL.
 
 ## Docs
 
@@ -16,6 +17,7 @@ them. Events, effects and hot reload are planned. Runs on SBCL and ECL.
 - [Registry](docs/registry.md)
 - [Services](docs/services.md)
 - [Contexts](docs/contexts.md)
+- [Delegation](docs/delegation.md)
 
 ## License
 

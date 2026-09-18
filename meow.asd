@@ -12,7 +12,8 @@
                (:file "call")
                (:file "registry")
                (:file "service")
-               (:file "context"))
+               (:file "context")
+               (:file "agent"))
   :in-order-to ((test-op (test-op "meow/tests"))))
 
 (defsystem "meow/tests"
@@ -27,7 +28,8 @@
                (:file "call")
                (:file "registry")
                (:file "service")
-               (:file "context"))
+               (:file "context")
+               (:file "agent"))
   :perform (test-op (o c)
              (unless (symbol-call :fiveam :run! :meow)
                (error "meow tests failed"))))

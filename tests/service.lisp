@@ -188,6 +188,15 @@
       (is (eq p (meow:lookup 'provider)))
       (stop-and-join p))))
 
+(test nil-name-is-not-registered
+  (with-fresh-registry ()
+    (let ((p (start 'provider :name nil)))
+      (is (equal '(nil :ready) (meow:receive :timeout 1)))
+      (is (eq :pong (meow:call p :ping)))
+      (is (null (meow:names)))
+      (stop-and-join p)
+      (is (equal '(nil :disposed :shutdown nil) (meow:receive :timeout 1))))))
+
 (test service-uses-its-own-registry
   (with-fresh-registry ()
     (let* ((registry (make-instance 'meow:registry))

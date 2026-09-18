@@ -23,4 +23,6 @@
    #:*debug-services* #:skip-message #:stop-service
    ;; contexts
    #:context #:context-intensity #:context-period
-   #:mount #:unmount #:children))
+   #:mount #:unmount #:children
+   ;; delegation
+   #:agent #:agent-parent #:agent-ref #:delegate))
