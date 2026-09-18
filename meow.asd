@@ -9,7 +9,8 @@
   :components ((:file "package")
                (:file "mailbox")
                (:file "process")
-               (:file "call"))
+               (:file "call")
+               (:file "registry"))
   :in-order-to ((test-op (test-op "meow/tests"))))
 
 (defsystem "meow/tests"
@@ -21,7 +22,8 @@
                (:file "condvar")
                (:file "mailbox")
                (:file "process")
-               (:file "call"))
+               (:file "call")
+               (:file "registry"))
   :perform (test-op (o c)
              (unless (symbol-call :fiveam :run! :meow)
                (error "meow tests failed"))))

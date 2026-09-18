@@ -22,7 +22,7 @@ no application-specific code.
 
 - Every running service is a [process](processes.md): one thread looping
   over its mailbox.
-- The registry is a lock-protected data structure, not a
+- The [registry](registry.md) is a lock-protected data structure, not a
   process, so it cannot crash on its own.
 - Threads are never killed. Cancellation is cooperative. Work that needs a
   hard kill belongs in a separate OS process.

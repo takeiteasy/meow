@@ -8,4 +8,9 @@
    #:self #:spawn #:with-process #:exit #:send #:receive
    #:add-exit-hook #:remove-exit-hook
    ;; call / cast
-   #:call #:cast #:reply #:stop #:serve))
+   #:call #:cast #:reply #:stop #:serve
+   ;; registry
+   #:registry #:*registry* #:already-registered
+   #:already-registered-name #:already-registered-owner
+   #:register #:unregister #:lookup #:names #:await
+   #:subscribe #:unsubscribe))
