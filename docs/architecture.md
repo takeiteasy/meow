@@ -7,9 +7,9 @@ application-specific code.
 
 ```
 ┌───────────────────────────────────────────┐
-│ hot reload · config · events · effects    │  planned
+│ hot reload · config · events              │  planned
 ├───────────────────────────────────────────┤
-│ delegation (agents)                       │  built
+│ effects · delegation (agents)             │  built
 │ context · supervisor                      │  built
 │ service                                   │  built
 │ registry                                  │  built
@@ -27,6 +27,7 @@ application-specific code.
 - A [service](services.md) is a process that registers itself and waits
   for its dependencies.
 - A [context](contexts.md) is a service that supervises other services.
+- An [effect](effects.md) is a resource released when its service stops.
 - An [agent](delegation.md) is a service delegated to a context by a
   parent process, which it reports back to when it finishes or exits.
 - Threads are never killed. Processes stop cooperatively.

@@ -28,6 +28,7 @@
                (:file "call")
                (:file "registry")
                (:file "service")
+               (:file "effect")
                (:file "context")
                (:file "agent"))
   :perform (test-op (o c)

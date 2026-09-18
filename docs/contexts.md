@@ -48,8 +48,8 @@ signals an error counts toward the limit and is tried again.
 ## Stopping
 
 When a context stops for any reason, it stops its children in reverse
-mount order and waits up to 5 seconds for each one before it runs its own
-`dispose` and unregisters.
+mount order and waits up to 5 seconds for each one. Then it unwinds its own
+[effects](effects.md), runs `dispose` and unregisters.
 
 ## Nesting
 

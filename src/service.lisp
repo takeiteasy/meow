@@ -10,6 +10,7 @@ the service stops. START-SERVICE captures the value.")
    (process :initform nil :reader service-process)
    (debug :initform nil)
    (deps :initform '())
+   (effects :initform '())
    (status :initform :waiting)))
 
 (defgeneric service-dependencies (service)
@@ -93,15 +94,52 @@ the service stops. START-SERVICE captures the value.")
         (setf status :waiting)
         (dep-down service name reason)))))
 
+(defun %require-own-process (service)
+  (unless (eq (self) (service-process service))
+    (error "~a can only be used from its own process." service)))
+
+(defun %release (service cell)
+  (%require-own-process service)
+  (with-slots (effects) service
+    (when (member cell effects :test #'eq)
+      (a:deletef effects cell :test #'eq)
+      (funcall (car cell)))))
+
+(defun effect (service acquire)
+  "Call ACQUIRE, which returns a disposer or nil. The disposer runs when
+SERVICE stops, in reverse order of acquisition and before DISPOSE. Returns a
+function that runs the disposer early. Only callable from SERVICE's process."
+  (%require-own-process service)
+  (when (eq (slot-value service 'status) :stopped)
+    (error "~a is stopping." service))
+  (a:if-let ((disposer (funcall acquire)))
+    (let ((cell (list disposer)))
+      (push cell (slot-value service 'effects))
+      (lambda () (%release service cell)))
+    (constantly nil)))
+
+(defgeneric %teardown (service reason)
+  (:documentation "Unwind SERVICE's effects, then DISPOSE."))
+
+(defmethod %teardown ((service service) reason)
+  (with-slots (effects status) service
+    (setf status :stopped)
+    (loop while effects
+          do (let ((disposer (car (pop effects))))
+               (handler-case (funcall disposer)
+                 (error (e)
+                   (%warn "Disposer of ~a failed: ~a" service e))))))
+  (dispose service reason))
+
 (defun %init-service (service)
   "Register SERVICE, unless its name is nil, and subscribe to its
-dependencies. The dispose hook is added first so it runs before the
+dependencies. The teardown hook is added first so it runs before the
 registry's unregister hook."
   (let* ((process (self))
          (registry (service-registry service))
          (hook (add-exit-hook process (lambda (process reason)
                                         (declare (ignore process))
-                                        (dispose service reason)))))
+                                        (%teardown service reason)))))
     (setf (slot-value service 'process) process)
     (handler-bind ((error (lambda (e)
                             (declare (ignore e))

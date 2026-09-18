@@ -131,7 +131,7 @@ restarts fall within period seconds."
       (%child-exit (%child-exit context a b))
       (t (call-next-method)))))
 
-(defmethod dispose :before ((context context) reason)
+(defmethod %teardown :before ((context context) reason)
   (declare (ignore reason))
   (dolist (child (reverse (slot-value context 'children)))
     (%stop-and-wait (child-process child) 5)))

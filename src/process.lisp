@@ -43,6 +43,10 @@ already exited."
     (a:deletef (slot-value process 'exit-hooks) token :test #'eq))
   nil)
 
+(defun %warn (control &rest args)
+  "Print a warning. Signalling one would unwind a bt2 thread."
+  (format *error-output* "~&WARNING: ~?~%" control args))
+
 (defun %exit (process reason)
   "Mark PROCESS dead, then run its exit hooks with no process lock held."
   (let ((hooks (bt2:with-lock-held ((process-lock process))
@@ -53,7 +57,7 @@ already exited."
     (dolist (hook (reverse hooks))
       (handler-case (funcall (car hook) process reason)
         (error (e)
-          (warn "Exit hook of ~a failed: ~a" process e))))))
+          (%warn "Exit hook of ~a failed: ~a" process e))))))
 
 (defun %run (process function)
   "Run FUNCTION as PROCESS and return its values. The exit reason is :normal

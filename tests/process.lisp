@@ -47,6 +47,21 @@
     (join p)
     (is (equal '(nil :done) seen))))
 
+(test failing-exit-hook-does-not-skip-others
+  (let* ((gate (bt2:make-semaphore))
+         (seen nil)
+         (p (meow:spawn (lambda () (bt2:wait-on-semaphore gate)))))
+    (meow:add-exit-hook p (lambda (&rest args)
+                            (declare (ignore args))
+                            (error "hook failed")))
+    (meow:add-exit-hook p (lambda (&rest args)
+                            (declare (ignore args))
+                            (setf seen t)))
+    (let ((*error-output* (make-broadcast-stream)))
+      (bt2:signal-semaphore gate)
+      (finishes (join p)))
+    (is-true seen)))
+
 (test exit-hook-on-dead-process-is-refused
   (let* ((called nil)
          (p (join (meow:spawn (lambda ())))))

@@ -6,8 +6,9 @@ A Cordis-style plugin/service core for Common Lisp, in early
 development. So far it provides processes (a thread plus a mailbox) with
 call/cast, a name registry with subscribe and await, CLOS services that
 wait for their dependencies in any mount order, contexts that supervise
-and restart them, and short-lived agents delegated to a context. Events,
-effects and hot reload are planned. Runs on SBCL and ECL.
+and restart them, short-lived agents delegated to a context, and effects
+that release resources when a service stops. Events and hot reload are
+planned. Runs on SBCL and ECL.
 
 ## Docs
 
@@ -17,6 +18,7 @@ effects and hot reload are planned. Runs on SBCL and ECL.
 - [Registry](docs/registry.md)
 - [Services](docs/services.md)
 - [Contexts](docs/contexts.md)
+- [Effects](docs/effects.md)
 - [Delegation](docs/delegation.md)
 
 ## License

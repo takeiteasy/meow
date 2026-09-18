@@ -35,6 +35,9 @@ Specialise any of these generic functions. Each has a no-op default.
 | `(handle s message)` | For each `call` or `cast`. The return value is the reply to a `call`. |
 | `(dispose s reason)` | When the service stops for any reason, before it is unregistered. |
 
+`(effect s acquire)` ties a resource to the service's lifetime. See
+[effects](effects.md).
+
 `(dependency s name)` returns a dependency's current process.
 `(service-ready-p s)` returns true when every dependency is present.
 
@@ -84,6 +87,7 @@ invokes `stop-service`.
 A service stops when it is sent `stop`, calls `exit`, or takes the
 `stop-service` restart. Then:
 
-1. `dispose` runs with the exit reason.
-2. The name, if any, is unregistered, and dependants get `dep-down` with that same
+1. [Effects](effects.md) unwind, newest first.
+2. `dispose` runs with the exit reason.
+3. The name, if any, is unregistered, and dependants get `dep-down` with that same
    reason.
