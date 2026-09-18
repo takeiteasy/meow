@@ -1,5 +1,5 @@
 #!/bin/sh
-# Usage: scripts/test.sh [sbcl|ecl|ccl]
+# Usage: tests/test.sh [sbcl|ecl|ccl]
 set -e
 
 QL="${QUICKLISP_SETUP:-$HOME/quicklisp/setup.lisp}"

@@ -22,9 +22,9 @@ The suite uses FiveAM and runs through ASDF:
 (asdf:test-system :meow)
 ```
 
-From the shell, `scripts/test.sh` runs it on `sbcl` (default), `ecl` or
+From the shell, `tests/test.sh` runs it on `sbcl` (default), `ecl` or
 `ccl` and exits non-zero on failure:
 
 ```sh
-scripts/test.sh ecl
+tests/test.sh ecl
 ```

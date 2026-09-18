@@ -43,8 +43,7 @@ registry, then process (exit hooks), then mailbox (sends). Exit hooks run
 with no process lock held. New code must not take the registry lock while
 holding a process or mailbox lock.
 
-## Differences from patchbay
+## Waiting
 
-The registry cannot crash on its own, so there is no crash-recovery table.
 `await` blocks the caller's own thread and keeps no state in the registry,
 so a timed-out or exited waiter leaves nothing behind.

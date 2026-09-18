@@ -13,7 +13,7 @@ jobs:
       matrix:
         lisp: [sbcl, ecl]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Lisp
         run: sudo apt-get update && sudo apt-get install -y sbcl ${{ matrix.lisp }}
@@ -26,4 +26,4 @@ jobs:
           cp -R "$GITHUB_WORKSPACE" ~/quicklisp/local-projects/meow
 
       - name: Test
-        run: scripts/test.sh ${{ matrix.lisp }}
+        run: tests/test.sh ${{ matrix.lisp }}
