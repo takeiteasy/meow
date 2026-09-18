@@ -37,6 +37,8 @@ Subscribers receive these as mailbox messages:
   that process, so a replacement that registered in the meantime is kept.
 - An exited subscriber's subscriptions are dropped.
 
+Each registry also has an [event](events.md) bus.
+
 ## Lock order
 
 registry, then process (exit hooks), then mailbox (sends). Exit hooks run

@@ -36,7 +36,8 @@ Specialise any of these generic functions. Each has a no-op default.
 | `(dispose s reason)` | When the service stops for any reason, before it is unregistered. |
 
 `(effect s acquire)` ties a resource to the service's lifetime. See
-[effects](effects.md).
+[effects](effects.md). `(on s event fn)` listens for
+[events](events.md).
 
 `(dependency s name)` returns a dependency's current process.
 `(service-ready-p s)` returns true when every dependency is present.

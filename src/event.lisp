@@ -1,0 +1,66 @@
+(in-package #:meow)
+
+(defstruct (listener (:constructor make-listener (process function)))
+  process function (active t))
+
+(defstruct (delivery (:constructor make-delivery (listener args))
+                     (:predicate %delivery-p))
+  listener args)
+
+(defun %deliver (delivery)
+  "Run DELIVERY's listener unless it was released after being sent."
+  (let ((listener (delivery-listener delivery)))
+    (when (listener-active listener)
+      (apply (listener-function listener) (delivery-args delivery)))))
+
+(defun on (service event function)
+  "Call FUNCTION on SERVICE's process whenever EVENT is emitted on its
+registry. The listener is an effect of SERVICE. Returns a function that
+removes it early. Only callable from SERVICE's process."
+  (let ((registry (service-registry service))
+        (listener (make-listener (service-process service) function)))
+    (effect service
+            (lambda ()
+              (%with-registry-lock (registry)
+                (a:appendf (gethash event listeners) (list listener)))
+              (lambda ()
+                (setf (listener-active listener) nil)
+                (%with-registry-lock (registry)
+                  (a:deletef (gethash event listeners) listener)
+                  (unless (gethash event listeners)
+                    (remhash event listeners))))))))
+
+(defun %listeners (target event)
+  (let ((registry (if (typep target 'registry)
+                      target
+                      (service-registry target))))
+    (%with-registry-lock (registry)
+      (copy-list (gethash event listeners)))))
+
+(defun emit (target event &rest args)
+  "Send EVENT with ARGS to every listener on TARGET, a service or registry,
+without waiting."
+  (dolist (listener (%listeners target event))
+    (cast (listener-process listener) (make-delivery listener args))))
+
+(defun %deliver-and-wait (listener args)
+  "LISTENER's result, or nil if it exited or skipped the delivery."
+  (let ((delivery (make-delivery listener args))
+        (process (listener-process listener)))
+    (if (eq process (self))
+        (%deliver delivery)
+        (multiple-value-bind (value status) (call process delivery :timeout nil)
+          (unless status value)))))
+
+(defun emit-serial (target event &rest args)
+  "Call each listener for EVENT on TARGET in registration order, waiting for
+each to finish."
+  (dolist (listener (%listeners target event))
+    (%deliver-and-wait listener args)))
+
+(defun bail (target event &rest args)
+  "Call listeners for EVENT on TARGET in order until one returns non-nil, and
+return that value."
+  (dolist (listener (%listeners target event))
+    (a:when-let ((value (%deliver-and-wait listener args)))
+      (return value))))

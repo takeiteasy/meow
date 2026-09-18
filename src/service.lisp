@@ -192,14 +192,19 @@ An unhandled error enters the debugger or stops SERVICE."
         :report "Stop the service."
         (exit (list :error condition))))))
 
+(defun %handle (service message)
+  (if (%delivery-p message)
+      (%deliver message)
+      (handle service message)))
+
 (defgeneric %dispatch (service message))
 
 (defmethod %dispatch ((service service) message)
   (multiple-value-bind (tag a b) (%message-parts message)
     (case tag
       (:call (when (reply-cell-p a)
-               (reply a (handle service b))))
-      (:cast (handle service a))
+               (reply a (%handle service b))))
+      (:cast (%handle service a))
       (:stop (exit a))
       (:registered (%dep-up service a b))
       (:unregistered (%dep-lost service a b)))))

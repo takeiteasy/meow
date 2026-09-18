@@ -26,4 +26,6 @@
    #:context #:context-intensity #:context-period
    #:mount #:unmount #:children
    ;; delegation
-   #:agent #:agent-parent #:agent-ref #:delegate))
+   #:agent #:agent-parent #:agent-ref #:delegate
+   ;; events
+   #:on #:emit #:emit-serial #:bail))

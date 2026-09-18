@@ -9,7 +9,8 @@
    (cv :initform (bt2:make-condition-variable) :reader registry-cv)
    (entries :initform (make-hash-table :test 'equal))
    (subscribers :initform (make-hash-table :test 'equal))
-   (subscriber-hooks :initform (make-hash-table :test 'eq))))
+   (subscriber-hooks :initform (make-hash-table :test 'eq))
+   (listeners :initform (make-hash-table :test 'equal))))
 
 (defvar *registry* (make-instance 'registry))
 
@@ -26,7 +27,7 @@
 
 (defmacro %with-registry-lock ((registry) &body body)
   `(bt2:with-lock-held ((registry-lock ,registry))
-     (with-slots (entries subscribers subscriber-hooks) ,registry
+     (with-slots (entries subscribers subscriber-hooks listeners) ,registry
        ,@body)))
 
 (defun %notify (registry name message)
