@@ -23,7 +23,7 @@ jobs:
           curl -sSfLO https://beta.quicklisp.org/quicklisp.lisp
           sbcl --non-interactive --no-userinit --load quicklisp.lisp \
                --eval '(quicklisp-quickstart:install)'
-          ln -s "$GITHUB_WORKSPACE" ~/quicklisp/local-projects/meow
+          cp -R "$GITHUB_WORKSPACE" ~/quicklisp/local-projects/meow
 
       - name: Test
         run: scripts/test.sh ${{ matrix.lisp }}
