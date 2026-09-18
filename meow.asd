@@ -6,7 +6,10 @@
   :depends-on ("bordeaux-threads" "alexandria")
   :pathname "src/"
   :serial t
-  :components ((:file "package"))
+  :components ((:file "package")
+               (:file "mailbox")
+               (:file "process")
+               (:file "call"))
   :in-order-to ((test-op (test-op "meow/tests"))))
 
 (defsystem "meow/tests"
@@ -15,7 +18,10 @@
   :serial t
   :components ((:file "package")
                (:file "suite")
-               (:file "condvar"))
+               (:file "condvar")
+               (:file "mailbox")
+               (:file "process")
+               (:file "call"))
   :perform (test-op (o c)
              (unless (symbol-call :fiveam :run! :meow)
                (error "meow tests failed"))))

@@ -1,0 +1,111 @@
+(in-package #:meow)
+
+;;; TODO: one thread per process; move to a shared dispatcher if process
+;;; counts reach the hundreds.
+
+(defvar *self* nil
+  "The process the current thread is running as.")
+
+(defclass process ()
+  ((name :initarg :name :initform nil :reader process-name)
+   (thread :initarg :thread :initform nil :accessor process-thread)
+   (mailbox :initform (make-mailbox) :reader process-mailbox)
+   (lock :initform (bt2:make-lock :name "process") :reader process-lock)
+   (alive-p :initform t :reader process-alive-p)
+   (exit-reason :initform nil :reader process-exit-reason)
+   (exit-hooks :initform '())))
+
+(defmethod print-object ((process process) stream)
+  (print-unreadable-object (process stream :type t :identity t)
+    (format stream "~@[~s ~]~:[exited ~s~;alive~]"
+            (process-name process)
+            (process-alive-p process)
+            (process-exit-reason process))))
+
+(defun self ()
+  *self*)
+
+(defun %require-self ()
+  (or *self* (error "Not running inside a process.")))
+
+(defun add-exit-hook (process function)
+  "Call FUNCTION with PROCESS and its exit reason when it exits. Returns a
+token for REMOVE-EXIT-HOOK, or nil (without calling FUNCTION) if PROCESS has
+already exited."
+  (bt2:with-lock-held ((process-lock process))
+    (when (process-alive-p process)
+      (let ((token (list function)))
+        (push token (slot-value process 'exit-hooks))
+        token))))
+
+(defun remove-exit-hook (process token)
+  (bt2:with-lock-held ((process-lock process))
+    (a:deletef (slot-value process 'exit-hooks) token :test #'eq))
+  nil)
+
+(defun %exit (process reason)
+  "Mark PROCESS dead, then run its exit hooks with no process lock held."
+  (let ((hooks (bt2:with-lock-held ((process-lock process))
+                 (when (process-alive-p process)
+                   (setf (slot-value process 'alive-p) nil
+                         (slot-value process 'exit-reason) reason)
+                   (shiftf (slot-value process 'exit-hooks) '())))))
+    (dolist (hook (reverse hooks))
+      (handler-case (funcall (car hook) process reason)
+        (error (e)
+          (warn "Exit hook of ~a failed: ~a" process e))))))
+
+(defun %run (process function)
+  "Run FUNCTION as PROCESS and return its values. The exit reason is :normal
+on return, the value passed to EXIT, (:error condition) on an unhandled
+error, or :aborted on any other non-local exit."
+  (let ((*self* process)
+        (reason :aborted)
+        (results '()))
+    (unwind-protect
+         (handler-bind ((error (lambda (e) (setf reason (list :error e)))))
+           (setf reason (catch '%exit
+                          (setf results (multiple-value-list (funcall function)))
+                          :normal)))
+      (%exit process reason))
+    (values-list results)))
+
+(defun exit (&optional (reason :normal))
+  "End the current process with REASON."
+  (%require-self)
+  (throw '%exit reason))
+
+(defun spawn (function &key name)
+  "Run FUNCTION in a new thread as a new process."
+  (let ((process (make-instance 'process :name name)))
+    (setf (process-thread process)
+          (bt2:make-thread (lambda ()
+                             (handler-case (%run process function)
+                               (error () nil)))
+                           :name (format nil "meow ~(~a~)" (or name "process"))))
+    process))
+
+(defun %call-with-process (function name)
+  (let ((process (make-instance 'process :name name
+                                         :thread (bt2:current-thread))))
+    (%run process (lambda () (funcall function process)))))
+
+(defmacro with-process ((var &key name) &body body)
+  "Run BODY as a process on the current thread, with VAR bound to it. Errors
+propagate as usual."
+  `(%call-with-process (lambda (,var)
+                         (declare (ignorable ,var))
+                         ,@body)
+                       ,name))
+
+(defun send (process message)
+  "Deliver MESSAGE to PROCESS. Never blocks; messages to exited processes are
+dropped silently."
+  (when (process-alive-p process)
+    (mailbox-send (process-mailbox process) message))
+  message)
+
+(defun receive (&key timeout)
+  "Take the next message for the current process. Returns (values message t),
+or (values nil nil) after TIMEOUT seconds (nil waits forever)."
+  (mailbox-receive (process-mailbox (%require-self)) :timeout timeout))

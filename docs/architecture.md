@@ -20,7 +20,7 @@ no application-specific code.
 
 ## Concurrency
 
-- Every running service is a process: one thread looping
+- Every running service is a [process](processes.md): one thread looping
   over its mailbox.
 - The registry is a lock-protected data structure, not a
   process, so it cannot crash on its own.

@@ -10,6 +10,7 @@ dependencies appear in the registry. Runs on SBCL and ECL.
 
 - [Getting started](docs/getting-started.md)
 - [Architecture](docs/architecture.md)
+- [Processes](docs/processes.md)
 
 ## License
 

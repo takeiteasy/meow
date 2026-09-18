@@ -5,9 +5,6 @@
 (def-suite :meow/condvar :in :meow)
 (in-suite :meow/condvar)
 
-(defun now ()
-  (/ (get-internal-real-time) internal-time-units-per-second))
-
 (defun lock-held-elsewhere-p (lock)
   "True when another thread cannot take LOCK right now."
   (let ((acquired nil))
