@@ -30,8 +30,10 @@ messages, so it can use the service's state without locks. An error in a
 listener is handled like an error in `handle` (see the
 [failure model](services.md#failure-model)).
 
-`emit-serial` and `bail` wait with no timeout. A listener that exits or
-skips the delivery counts as returning nil. A service that emits an event it
+`emit-serial` and `bail` wait up to `*event-timeout*` seconds for each
+listener (default nil, which waits forever). A listener that exits, skips the
+delivery or times out counts as returning nil. A timed-out listener still
+runs, but its result is discarded. A service that emits an event it
 listens for itself runs its own listener directly.
 
 ## Lifetime

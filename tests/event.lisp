@@ -130,6 +130,17 @@ signals an error; otherwise it is the listener's value."
       (is (= 1 (listener-count r)))
       (stop-and-join b))))
 
+(test timed-out-listener-is-skipped
+  (with-fresh-registry (r)
+    (let ((a (start-listener :a :ask :result :slow :delay 1))
+          (b (start-listener :b :ask :result :b))
+          (start (now)))
+      (is (eq :b (let ((meow:*event-timeout* 0.2))
+                   (meow:bail r :ask))))
+      (is (< (- (now) start) 0.8))
+      (stop-and-join a)
+      (stop-and-join b))))
+
 (test registries-are-isolated
   (with-fresh-registry ()
     (let ((p (start-listener :a :ping))

@@ -28,4 +28,4 @@
    ;; delegation
    #:agent #:agent-parent #:agent-ref #:delegate
    ;; events
-   #:on #:emit #:emit-serial #:bail))
+   #:on #:emit #:emit-serial #:bail #:*event-timeout*))

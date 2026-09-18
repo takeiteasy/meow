@@ -7,6 +7,10 @@
                      (:predicate %delivery-p))
   listener args)
 
+(defvar *event-timeout* nil
+  "Seconds EMIT-SERIAL and BAIL wait for each listener, or nil to wait
+forever.")
+
 (defun %deliver (delivery)
   "Run DELIVERY's listener unless it was released after being sent."
   (let ((listener (delivery-listener delivery)))
@@ -44,12 +48,12 @@ without waiting."
     (cast (listener-process listener) (make-delivery listener args))))
 
 (defun %deliver-and-wait (listener args)
-  "LISTENER's result, or nil if it exited or skipped the delivery."
+  "LISTENER's result, or nil if it exited, skipped the delivery or timed out."
   (let ((delivery (make-delivery listener args))
         (process (listener-process listener)))
     (if (eq process (self))
         (%deliver delivery)
-        (multiple-value-bind (value status) (call process delivery :timeout nil)
+        (multiple-value-bind (value status) (call process delivery :timeout *event-timeout*)
           (unless status value)))))
 
 (defun emit-serial (target event &rest args)
