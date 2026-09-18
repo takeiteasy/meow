@@ -61,3 +61,11 @@
     (meow:stop s :bye)
     (join s)
     (is (eq :bye (meow:process-exit-reason s)))))
+
+(test malformed-messages-are-dropped
+  (let ((s (test-server)))
+    (dolist (message '(:atom (:call) (:call :not-a-cell 1) (:call . :x)
+                       (:cast) (:cast . :x) (:cast 1 2) (:stop) (:stop . :x)))
+      (meow:send s message))
+    (is (= 4 (meow:call s 2)))
+    (stop-and-join s)))

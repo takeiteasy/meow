@@ -56,4 +56,5 @@ no lock held.
 
 Wire format for processes that run their own `receive` loop:
 `(:call cell msg)`, answered with `(reply cell value)`; `(:cast msg)`; and
-`(:stop reason)`, which `serve` loops honour.
+`(:stop reason)`, which `serve` loops honour. `serve` drops messages that
+don't match these shapes.

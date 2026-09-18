@@ -142,7 +142,8 @@
 (test stray-messages-are-ignored
   (with-fresh-registry ()
     (let ((p (start 'provider)))
-      (dolist (message '(:atom (1 2 3 4) (:a . :b) (:registered)))
+      (dolist (message '(:atom (1 2 3 4) (:a . :b) (:registered)
+                         (:call) (:call :not-a-cell 1) (:stop)))
         (meow:send p message))
       (is (eq :pong (meow:call p :ping)))
       (stop-and-join p))))

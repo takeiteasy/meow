@@ -109,16 +109,14 @@ added first so it runs before the registry's unregister hook."
 ;;; stop-service restarts once supervisors exist.
 (defun %service-loop (service)
   (%maybe-ready service)
-  (loop for message = (receive)
-        do (when (and (consp message) (a:proper-list-p message))
-             (let ((a (second message))
-                   (b (third message)))
-               (case (first message)
-                 (:call (reply a (handle service b)))
-                 (:cast (handle service a))
-                 (:stop (exit a))
-                 (:registered (%dep-up service a b))
-                 (:unregistered (%dep-lost service a b)))))))
+  (loop (multiple-value-bind (tag a b) (%message-parts (receive))
+          (case tag
+            (:call (when (reply-cell-p a)
+                     (reply a (handle service b))))
+            (:cast (handle service a))
+            (:stop (exit a))
+            (:registered (%dep-up service a b))
+            (:unregistered (%dep-lost service a b))))))
 
 (defun start-service (service &key (registry *registry*))
   "Run SERVICE in a new process. Returns once it is registered and

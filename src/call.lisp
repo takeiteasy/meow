@@ -54,17 +54,24 @@ timeout PROCESS keeps running and its eventual reply is discarded."
   (send process (list :stop reason))
   nil)
 
-;;; TODO: a malformed :call, :cast or :stop message (wrong length or dotted)
-;;; crashes the loop; ignore it as the service loop does.
+(defun %message-parts (message)
+  "(values tag a b) if MESSAGE is a proper list of the length its tag needs,
+else nil."
+  (when (and (consp message)
+             (a:proper-list-p message)
+             (eql (length (rest message))
+                  (getf '(:call 2 :cast 1 :stop 1 :registered 2 :unregistered 2)
+                        (first message))))
+    (values (first message) (second message) (third message))))
+
 (defun serve (handler &key name)
   "Spawn a process that calls HANDLER with each call or cast message. A call's
-reply is HANDLER's return value."
+reply is HANDLER's return value. Malformed messages are dropped."
   (spawn (lambda ()
-           (loop for message = (receive)
-                 do (when (consp message)
-                      (case (first message)
-                        (:call (destructuring-bind (cell msg) (rest message)
-                                 (reply cell (funcall handler msg))))
-                        (:cast (funcall handler (second message)))
-                        (:stop (exit (second message)))))))
+           (loop (multiple-value-bind (tag a b) (%message-parts (receive))
+                   (case tag
+                     (:call (when (reply-cell-p a)
+                              (reply a (funcall handler b))))
+                     (:cast (funcall handler a))
+                     (:stop (exit a))))))
          :name name))
