@@ -118,6 +118,18 @@ function that runs the disposer early. Only callable from SERVICE's process."
       (lambda () (%release service cell)))
     (constantly nil)))
 
+(defmacro with-effect ((var service init-form) &body cleanup)
+  "Acquire INIT-FORM as an effect of SERVICE. CLEANUP, with VAR bound to the
+resource, is its disposer. Returns the resource and the release function."
+  (a:with-gensyms (resource release)
+    `(let* ((,resource nil)
+            (,release (effect ,service
+                             (lambda ()
+                               (let ((,var ,init-form))
+                                 (setf ,resource ,var)
+                                 (lambda () ,@cleanup))))))
+       (values ,resource ,release))))
+
 (defgeneric %teardown (service reason)
   (:documentation "Unwind SERVICE's effects, then DISPOSE."))
 
@@ -127,8 +139,7 @@ function that runs the disposer early. Only callable from SERVICE's process."
     (loop while effects
           do (let ((disposer (car (pop effects))))
                (handler-case (funcall disposer)
-                 (error (e)
-                   (%warn "Disposer of ~a failed: ~a" service e))))))
+                 (error (e) (%teardown-failed e service))))))
   (dispose service reason))
 
 (defun %init-service (service)

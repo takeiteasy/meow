@@ -90,3 +90,37 @@
         (setf process p)
         (error "boom")))
     (is (eq :error (first (meow:process-exit-reason process))))))
+
+(test teardown-error-hook-sees-failing-exit-hook
+  (let* ((gate (bt2:make-semaphore))
+         (seen nil)
+         (p (meow:spawn (lambda () (bt2:wait-on-semaphore gate)))))
+    (meow:add-exit-hook p (lambda (&rest args)
+                            (declare (ignore args))
+                            (error "hook failed")))
+    (setf meow:*teardown-error-hook*
+          (lambda (condition source) (setf seen (list condition source))))
+    (unwind-protect
+         (progn (bt2:signal-semaphore gate)
+                (join p))
+      (setf meow:*teardown-error-hook* nil))
+    (is (typep (first seen) 'error))
+    (is (eq p (second seen)))))
+
+(test failing-teardown-error-hook-falls-back-to-printing
+  (let* ((gate (bt2:make-semaphore))
+         (seen nil)
+         (p (meow:spawn (lambda () (bt2:wait-on-semaphore gate)))))
+    (meow:add-exit-hook p (lambda (&rest args)
+                            (declare (ignore args))
+                            (error "hook failed")))
+    (meow:add-exit-hook p (lambda (&rest args)
+                            (declare (ignore args))
+                            (setf seen t)))
+    (setf meow:*teardown-error-hook*
+          (lambda (&rest args) (declare (ignore args)) (error "hook hook failed")))
+    (unwind-protect
+         (progn (bt2:signal-semaphore gate)
+                (finishes (join p)))
+      (setf meow:*teardown-error-hook* nil))
+    (is-true seen)))

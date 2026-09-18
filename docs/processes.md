@@ -31,6 +31,18 @@ nil and never calls `fn`.
 On exit, a process is marked dead first and its hooks run afterwards, with
 no lock held.
 
+A hook that signals an error doesn't stop the others. The error is passed
+to `*teardown-error-hook*`, a function of `(condition source)`, where
+`source` is the process (or, for a failing [effect](effects.md), the
+service). With no hook set, or if the hook itself fails, a warning is
+printed. Set it globally with `setf`, since hooks run on the exiting
+process's thread.
+
+```lisp
+(setf meow:*teardown-error-hook*
+      (lambda (condition source) (log-error "~a: ~a" source condition)))
+```
+
 ## Messages
 
 - `(send p msg)` never blocks. Messages to an exited process are dropped.

@@ -43,9 +43,18 @@ already exited."
     (a:deletef (slot-value process 'exit-hooks) token :test #'eq))
   nil)
 
-(defun %warn (control &rest args)
-  "Print a warning. Signalling one would unwind a bt2 thread."
-  (format *error-output* "~&WARNING: ~?~%" control args))
+(defvar *teardown-error-hook* nil
+  "When non-nil, a function called with the condition and the process or
+service when an exit hook or disposer fails. Otherwise a warning is printed.
+Read from its global value, since teardown runs on the exiting thread.")
+
+(defun %teardown-failed (condition source)
+  "Report a failed exit hook or disposer without signalling, which would
+unwind a bt2 thread. Falls back to printing if the hook itself fails."
+  (unless (and *teardown-error-hook*
+               (ignore-errors (funcall *teardown-error-hook* condition source) t))
+    (format *error-output* "~&WARNING: Teardown of ~a failed: ~a~%"
+            source condition)))
 
 (defun %exit (process reason)
   "Mark PROCESS dead, then run its exit hooks with no process lock held."
@@ -57,7 +66,7 @@ already exited."
     (dolist (hook (reverse hooks))
       (handler-case (funcall (car hook) process reason)
         (error (e)
-          (%warn "Exit hook of ~a failed: ~a" process e))))))
+          (%teardown-failed e process))))))
 
 (defun %run (process function)
   "Run FUNCTION as PROCESS and return its values. The exit reason is :normal

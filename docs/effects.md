@@ -17,11 +17,24 @@ the service stops for any reason, it releases the resource.
 function of no arguments) or nil. If `acquire` signals, nothing is
 recorded.
 
+`with-effect` binds the resource, and its body is the disposer. It returns
+the resource and the release function.
+
+```lisp
+(defmethod ready ((s logger))
+  (setf (log-stream s)
+        (with-effect (stream s (open "app.log" :direction :output
+                                               :if-exists :append
+                                               :if-does-not-exist :create))
+          (close stream))))
+```
+
 ## Unwinding
 
 When a service stops, its disposers run in reverse order of acquisition,
-and then `dispose` runs. A disposer that signals an error is printed as a
-warning, and the rest still run.
+and then `dispose` runs. A disposer that signals an error is passed to
+`*teardown-error-hook*` (see [processes](processes.md#exit-hooks)), and the
+rest still run.
 
 ## Early release
 
