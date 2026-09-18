@@ -14,7 +14,8 @@
   :pathname "tests/"
   :serial t
   :components ((:file "package")
-               (:file "suite"))
+               (:file "suite")
+               (:file "condvar"))
   :perform (test-op (o c)
              (unless (symbol-call :fiveam :run! :meow)
                (error "meow tests failed"))))
