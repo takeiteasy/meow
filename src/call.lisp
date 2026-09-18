@@ -54,6 +54,8 @@ timeout PROCESS keeps running and its eventual reply is discarded."
   (send process (list :stop reason))
   nil)
 
+;;; TODO: a malformed :call, :cast or :stop message (wrong length or dotted)
+;;; crashes the loop; ignore it as the service loop does.
 (defun serve (handler &key name)
   "Spawn a process that calls HANDLER with each call or cast message. A call's
 reply is HANDLER's return value."

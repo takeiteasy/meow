@@ -13,4 +13,9 @@
    #:registry #:*registry* #:already-registered
    #:already-registered-name #:already-registered-owner
    #:register #:unregister #:lookup #:names #:await
-   #:subscribe #:unsubscribe))
+   #:subscribe #:unsubscribe
+   ;; services
+   #:service #:defservice #:start-service
+   #:service-name #:service-registry #:service-process #:service-ready-p
+   #:service-dependencies #:dependency
+   #:metadata #:ready #:dep-down #:handle #:dispose))

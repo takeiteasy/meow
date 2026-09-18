@@ -9,8 +9,9 @@ application-specific code.
 ┌───────────────────────────────────────────┐
 │ agent supervisor (delegation)             │  planned
 │ hot reload · config · events · effects    │  planned
-│ context · service · supervisor            │  planned
+│ context · supervisor                      │  planned
 ├───────────────────────────────────────────┤
+│ service                                   │  built
 │ registry                                  │  built
 │ process · mailbox · call/cast             │  built
 ├───────────────────────────────────────────┤
@@ -23,6 +24,8 @@ application-specific code.
 - A [process](processes.md) is one thread looping over its mailbox.
 - The [registry](registry.md) is a lock-protected data structure, not a
   process, so it cannot crash on its own.
+- A [service](services.md) is a process that registers itself and waits
+  for its dependencies.
 - Threads are never killed. Processes stop cooperatively.
 
 ## Implementations

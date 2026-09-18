@@ -1,0 +1,65 @@
+# Services
+
+A service is a CLOS instance running as a [process](processes.md). It
+registers under a name and waits for the services it depends on, so
+services can be started in any order.
+
+## Defining
+
+```lisp
+(defservice consumer ()
+  ((reporter :initarg :reporter :reader reporter))
+  (:depends-on provider)
+  (:name consumer))
+```
+
+`defservice` takes the same arguments as `defclass`, plus two options:
+
+- `(:depends-on name...)`: names to wait for. Subclasses inherit them.
+- `(:name name)`: the registration name. Defaults to the class name. It can
+  also be set per instance with the `:name` initarg.
+
+Names compare with `equal`, so `foo::provider` and `bar::provider` are
+different names.
+
+## Protocol
+
+Specialise any of these generic functions. Each has a no-op default.
+
+| Generic function | Called |
+|---|---|
+| `(metadata s)` | At registration. Returns a plist that is published as the registration props. |
+| `(ready s)` | When every dependency is registered. It fires again after a lost dependency comes back. |
+| `(dep-down s name reason)` | When dependency `name` leaves a ready service. |
+| `(handle s message)` | For each `call` or `cast`. The return value is the reply to a `call`. |
+| `(dispose s reason)` | When the service stops for any reason, before it is unregistered. |
+
+`(dependency s name)` returns a dependency's current process.
+`(service-ready-p s)` returns true when every dependency is present.
+
+## Running
+
+```lisp
+(defvar *p* (start-service (make-instance 'provider)))
+(call *p* :ping)
+(stop *p*)
+```
+
+`(start-service s &key registry)` returns the process once the service is
+registered and subscribed. It signals `already-registered` if the name is
+taken. `ready` always runs later, on the service's own process.
+
+The service keeps the registry it was started with and uses it for
+everything. `registry` defaults to the caller's `*registry*`.
+
+`call`, `cast` and `stop` work as they do for `serve`.
+
+## Stopping
+
+A service stops when it is sent `stop` or `exit`s, or when `handle`
+signals an error. Its exit reason is `(:error condition)` in the error case.
+Then:
+
+1. `dispose` runs with the exit reason.
+2. The name is unregistered, and dependants get `dep-down` with that same
+   reason.
