@@ -354,14 +354,20 @@
         (is (equal (list (list 'meow:stop-timeout ctx)) reports))
         (join p)))))
 
+(defun infinite-child (context)
+  "A stuck child whose 0.05s shutdown is replaced by :infinity, so it would be
+killed if :infinity were ignored."
+  (let ((p (stuck-child context :shutdown 0.05)))
+    (meow:update context p :shutdown :infinity)
+    p))
+
 (test unmount-waits-for-an-infinite-shutdown
   (with-fresh-registry ()
     (let* ((ctx (start-context))
-           (p (meow:mount ctx 'provider :shutdown :infinity))
-           (start (now)))
-      (meow:cast p '(:sleep 0.3))
+           (start (now))
+           (p (infinite-child ctx)))
       (is (eq t (meow:unmount ctx 'provider)))
-      (is (waited-p 0.3 (- (now) start)))
+      (is (waited-p 0.5 (- (now) start)))
       (is (eq :shutdown (meow:process-exit-reason p)))
       (stop-and-join ctx))))
 
@@ -387,7 +393,7 @@
   (with-fresh-registry ()
     (with-teardown-reports (reports)
       (let* ((ctx (start-context))
-             (p (stuck-child ctx :shutdown :infinity)))
+             (p (infinite-child ctx)))
         (stop-and-join ctx)
         (is (null reports))
         (is (eq :shutdown (meow:process-exit-reason p)))))))
