@@ -19,8 +19,9 @@ Exit reasons:
 - `(:error condition)`: an unhandled error.
 - `:aborted`: any other non-local exit.
 
-Threads are never killed. A process only stops by returning, calling
-`exit`, or failing.
+A process stops by returning, calling `exit`, or failing. The only
+exception is a [context](contexts.md#stopping) killing a child that misses
+its shutdown.
 
 ## Exit hooks
 
