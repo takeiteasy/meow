@@ -91,13 +91,18 @@
 (test nested-context-escalates-to-parent
   (with-fresh-registry ()
     (let* ((root (start-context))
-           (inner (meow:mount root 'meow:context :name :inner :intensity 0))
-           (p (meow:mount inner 'provider :restart :permanent)))
+           (inner (meow:mount root 'meow:context
+                              :name :inner :intensity 0
+                              :children '((provider :restart :permanent))))
+           (p (child-process inner 'provider)))
+      (meow:mount inner 'consumer)
       (meow:stop p :killed)
       (let ((inner2 (restarted root :inner inner)))
         (is-true inner2)
         (is (eq :restart-limit (meow:process-exit-reason inner)))
-        (is (null (meow:children inner2)) "a restarted context starts empty"))
+        (is (equal '(provider) (mapcar #'first (meow:children inner2)))
+            "declared children are rebuilt, mounted ones are not")
+        (is (meow:process-alive-p (meow:lookup 'provider))))
       (stop-and-join root))))
 
 (test mount-errors-signal-in-caller
@@ -206,12 +211,86 @@
       (is (null (meow:lookup 'reloadable)))
       (stop-and-join ctx))))
 
-(test reloaded-context-starts-empty
+(test reloaded-context-rebuilds-declared-children
   (with-fresh-registry ()
     (let* ((root (start-context))
-           (inner (meow:mount root 'meow:context :name :inner)))
-      (meow:mount inner 'provider)
-      (let ((inner2 (meow:reload root :inner)))
-        (is (null (meow:children inner2)))
-        (is (null (meow:lookup 'provider))))
+           (inner (meow:mount root 'meow:context :name :inner
+                                                 :children '((provider)))))
+      (meow:mount inner 'consumer)
+      (let* ((p (child-process inner 'provider))
+             (inner2 (meow:reload root :inner))
+             (p2 (child-process inner2 'provider)))
+        (is (equal '(provider) (mapcar #'first (meow:children inner2))))
+        (is (not (eq p p2)))
+        (is (eq p2 (meow:lookup 'provider)))
+        (is (null (meow:lookup 'consumer))))
       (stop-and-join root))))
+
+(meow:defservice plugins (meow:context)
+  ()
+  (:default-initargs :children '((provider :restart :permanent :shutdown 1)
+                                 (consumer))))
+
+(test declared-children-are-up-when-started
+  (with-fresh-registry ()
+    (let ((ctx (meow:start-service (make-instance 'plugins))))
+      (is (equal '((provider :permanent) (consumer :transient))
+                 (mapcar (lambda (child) (list (first child) (third child)))
+                         (meow:children ctx))))
+      (is (eq (child-process ctx 'provider) (meow:lookup 'provider)))
+      (stop-and-join ctx)
+      (is (null (meow:names))))))
+
+(test invalid-child-specs-signal-invalid-config
+  (dolist (children '(provider (provider :restart) ((provider :restart :sometimes))
+                      (("provider")) ((provider :shutdown -1))))
+    (signals meow:invalid-config
+      (make-instance 'meow:context :children children))))
+
+(test failing-declared-child-fails-context-start
+  (with-fresh-registry ()
+    (signals meow:invalid-config
+      (start-context :children '((provider) (configured :port 80))))
+    (is (null (meow:names)) "children started before the failure are stopped")))
+
+(defun stuck-child (context &rest initargs)
+  "Mount a provider and keep it busy for half a second."
+  (let ((p (apply #'meow:mount context 'provider initargs)))
+    (meow:cast p '(:sleep 0.5))
+    p))
+
+(test unmount-reports-a-child-that-misses-its-timeout
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (stuck-child ctx)))
+      (is (eq :timeout (meow:unmount ctx 'provider :timeout 0.05)))
+      (is (null (meow:children ctx)))
+      (is (eq p (meow:lookup 'provider)) "still registered until it exits")
+      (join p)
+      (stop-and-join ctx))))
+
+(test reload-signals-stop-timeout
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (stuck-child ctx :shutdown 0.05)))
+      (handler-case (progn (meow:reload ctx 'provider) (fail "no error"))
+        (meow:stop-timeout (e)
+          (is (eq p (meow:stop-timeout-process e)))
+          (is (= 0.05 (meow:stop-timeout-seconds e)))))
+      (is (null (meow:children ctx)))
+      (join p)
+      (stop-and-join ctx))))
+
+(test teardown-reports-children-that-miss-their-shutdown
+  (with-fresh-registry ()
+    (let* ((reports '())
+           (ctx (start-context))
+           (p (stuck-child ctx :shutdown 0.05)))
+      (setf meow:*teardown-error-hook*
+            (lambda (condition source)
+              (push (list (type-of condition) (meow:service-process source))
+                    reports)))
+      (unwind-protect (stop-and-join ctx)
+        (setf meow:*teardown-error-hook* nil))
+      (is (equal (list (list 'meow:stop-timeout ctx)) reports))
+      (join p))))

@@ -27,6 +27,7 @@
    ;; contexts
    #:context #:context-intensity #:context-period
    #:mount #:unmount #:children #:reload
+   #:stop-timeout #:stop-timeout-process #:stop-timeout-seconds
    ;; delegation
    #:agent #:agent-parent #:agent-ref #:delegate
    ;; events

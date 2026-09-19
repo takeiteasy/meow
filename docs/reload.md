@@ -8,8 +8,9 @@ so it picks up recompiled code while keeping its state.
 (reload *app* 'server)   ; => new process
 ```
 
-`(reload ctx child &key (timeout 5))` takes a name or a process. It
-returns the new process, or nil if `child` isn't mounted.
+`(reload ctx child &key timeout)` takes a name or a process. It returns
+the new process, or nil if `child` isn't mounted. `timeout` defaults to the
+child's `shutdown`.
 
 ## Steps
 
@@ -22,7 +23,9 @@ returns the new process, or nil if `child` isn't mounted.
    are present.
 
 If the child doesn't stop within `timeout` seconds, or fails to start, it
-is removed from the context and the error is signalled in the caller.
+is removed from the context and the error is signalled in the caller. A
+missed timeout signals `stop-timeout`, and the old process keeps running
+until it exits.
 
 ## What survives
 
@@ -30,7 +33,9 @@ Only the initargs passed to `mount` are applied again. Every other slot
 keeps its value, including runtime state set in `ready` or `handle`.
 Anything the old process held as an effect has been released.
 
-A reloaded context starts with no children.
+A reloaded context remounts its
+[declared children](contexts.md#declared-children); the rest are not
+remounted.
 
 ## Class redefinition
 

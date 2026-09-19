@@ -206,10 +206,15 @@ resource, is its disposer. Returns the resource and the release function."
                  (error (e) (%teardown-failed e service))))))
   (dispose service reason))
 
+(defgeneric %startup (service)
+  (:documentation "Called on SERVICE's process once it is registered, before
+START-SERVICE returns. An error fails the start.")
+  (:method ((service service)) nil))
+
 (defun %init-service (service)
   "Register SERVICE, unless its name is nil, and subscribe to its
-dependencies. The teardown hook is added first so it runs before the
-registry's unregister hook."
+dependencies, then run %STARTUP. The teardown hook is added first so it
+runs before the registry's unregister hook."
   (let* ((process (self))
          (registry (service-registry service))
          (hook (add-exit-hook process (lambda (process reason)
@@ -223,7 +228,8 @@ registry's unregister hook."
         (register (service-name service) process
                   :props (metadata service) :registry registry)))
     (dolist (name (service-dependencies service))
-      (subscribe name :registry registry))))
+      (subscribe name :registry registry))
+    (%startup service)))
 
 (defun skip-message (&optional condition)
   "Invoke the SKIP-MESSAGE restart: drop the message being handled and keep
