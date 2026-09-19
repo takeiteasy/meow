@@ -361,7 +361,7 @@
            (start (now)))
       (meow:cast p '(:sleep 0.3))
       (is (eq t (meow:unmount ctx 'provider)))
-      (is (<= 0.3 (- (now) start)))
+      (is (waited-p 0.3 (- (now) start)))
       (is (eq :shutdown (meow:process-exit-reason p)))
       (stop-and-join ctx))))
 
@@ -426,8 +426,8 @@
       (sleep 0.1)
       (is (eq p (child-process ctx 'provider)) "the mailbox is not blocked")
       (is-true (restarted ctx 'provider p))
-      (is (<= 0.2 (- (now) start)))
-      (is (every (lambda (time) (<= 0.2 time 0.35))
+      (is (waited-p 0.2 (- (now) start)))
+      (is (every (lambda (time) (and (waited-p 0.2 time) (< time 0.35)))
                  (restart-times ctx 'provider 2)))
       (stop-and-join ctx))))
 
@@ -436,7 +436,7 @@
     (let ((ctx (start-context :restart-delay 0.05 :restart-delay-max 0.2
                               :intensity 10)))
       (meow:mount ctx 'provider :restart :permanent)
-      (is (every #'<= '(0.05 0.1 0.2 0.2)
+      (is (every #'waited-p '(0.05 0.1 0.2 0.2)
                  (restart-times ctx 'provider 4)))
       (stop-and-join ctx))))
 
@@ -448,7 +448,7 @@
                                 :backoff-max 0.1)
       (is (every (lambda (time) (< time 0.1))
                  (restart-times ctx 'provider 2)))
-      (is (every (lambda (time) (<= 0.1 time 0.9))
+      (is (every (lambda (time) (and (waited-p 0.1 time) (< time 0.9)))
                  (restart-times ctx 'consumer 2)))
       (stop-and-join ctx))))
 
