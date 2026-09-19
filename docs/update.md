@@ -10,7 +10,7 @@
 `(update ctx child &rest initargs)` takes a name or a process. The new
 initargs are merged over the ones the child was mounted with, and the
 result is used by later [restarts](contexts.md#restarts) and
-[reloads](reload.md). It returns the child's process, or nil if `child`
+[reloads](reload.md). Both win over [intercepts](intercept.md). It returns the child's process, or nil if `child`
 isn't mounted. The process may have exited if the child is waiting to
 restart.
 
@@ -22,7 +22,8 @@ mount options and take effect without touching the child.
 1. The merged initargs are validated on a fresh instance. A bad config
    signals `invalid-config` in the caller and changes nothing.
 2. `(update-config service old new)` is called on the child's process,
-   with the old and new initarg plists, before any slot changes.
+   with the old and new initarg plists, intercepts included, before any
+   slot changes.
 3. If it returns true, `new` is applied to the instance in place and the
    same process keeps running. Otherwise the child is
    [reloaded](reload.md) and `update` returns the new process.

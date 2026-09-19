@@ -25,6 +25,18 @@
         when problem
           collect (format nil "children: ~s ~a" spec problem)))
 
+(defun %intercept-problems (context)
+  (loop for entry in (slot-value context 'intercept)
+        unless (and (consp entry) (symbolp (first entry))
+                    (a:proper-list-p entry)
+                    (evenp (length (rest entry)))
+                    (null (%mount-options (rest entry))))
+          collect (format nil "intercept: ~s is not (class-or-name &rest initargs)"
+                          entry)))
+
+(defun %context-problems (context)
+  (append (%spec-problems context) (%intercept-problems context)))
+
 (defservice context ()
   ((intensity :initarg :intensity :initform 5 :type (integer 0)
               :reader context-intensity)
@@ -35,15 +47,16 @@
                       :type (or null (real 0)))
    (specs :initarg :children :initform '() :type list)
    (isolate :initarg :isolate :initform '() :type list)
+   (intercept :initarg :intercept :initform '() :type list)
    (scope :initform nil :reader context-registry)
    (children :initform '())
    (restarts :initform '()))
-  (:validate %spec-problems))
+  (:validate %context-problems))
 
 (defstruct (child (:constructor make-child (class initargs restart shutdown
                                             backoff backoff-max)))
   class initargs restart shutdown backoff backoff-max
-  name process service (restarts '()) pending)
+  name process service config (restarts '()) pending)
 
 (define-condition stop-timeout (error)
   ((process :initarg :process :reader stop-timeout-process)
@@ -129,6 +142,18 @@ CHILD is not mounted. INVALID-CONFIG and reload errors are signalled here."
             value
             (error value))))))
 
+(defun intercept (context head &rest initargs)
+  "Set CONTEXT's intercept for HEAD, a class or service name, to INITARGS, or
+remove it if there are none. Matching children are updated as by UPDATE;
+nested contexts update theirs shortly after. INVALID-CONFIG for a child is
+signalled here and changes nothing. Other errors are signalled after the
+remaining children are updated, with the intercept kept."
+  (destructuring-bind (status value)
+      (%context-call context (list '%intercept head initargs))
+    (if (eq status :ok)
+        value
+        (error value))))
+
 (defun %stop-and-wait (process timeout &optional (reason :shutdown))
   "Stop PROCESS and wait up to TIMEOUT seconds for its exit hooks to run,
 then kill it and wait as long again. A TIMEOUT of :infinity waits without
@@ -167,16 +192,54 @@ killing. Returns t, :killed, or nil if it is still running."
                        (process-exit-reason process))))
     process))
 
-(defun %start-child (context child)
-  "Start CHILD with a fresh instance from its spec."
-  (let ((service (apply #'make-instance (child-class child)
-                        (child-initargs child))))
-    (setf (slot-value service 'context) context
-          (child-service child) service))
-  (%run-child context child))
-
 (defun %plist-keys (plist)
   (loop for key in plist by #'cddr collect key))
+
+(defun %merge (plist defaults)
+  "PLIST, then the keys of DEFAULTS it lacks."
+  (append plist (apply #'a:remove-from-plist defaults (%plist-keys plist))))
+
+(defun %initarg-name (class initargs)
+  "The service name an instance of CLASS made with INITARGS would have."
+  (multiple-value-bind (key value tail) (get-properties initargs '(:name))
+    (declare (ignore key))
+    (if tail
+        value
+        (let ((class (if (symbolp class) (find-class class) class)))
+          (c2mop:ensure-finalized class)
+          (a:when-let ((default (find :name (c2mop:class-default-initargs class)
+                                      :key #'first)))
+            (funcall (third default)))))))
+
+(defun %intercepted-p (head class name)
+  (or (and name (equal head name))
+      (a:when-let ((head-class (find-class head nil)))
+        (subtypep class head-class))))
+
+;;; TODO: ancestors' intercepts are read from this context's thread without
+;;; a lock; pass them down with each refresh if that race matters.
+(defun %config (context class initargs)
+  "INITARGS for a CLASS child of CONTEXT, merged over the matching intercepts
+of CONTEXT and its ancestors. Nearer contexts and later entries win."
+  (let ((name (%initarg-name class initargs)))
+    (loop for c = context then (service-context c)
+          while c
+          do (loop for (head . intercepted) in (reverse (slot-value c 'intercept))
+                   when (%intercepted-p head class name)
+                     do (setf initargs (%merge initargs intercepted))))
+    initargs))
+
+(defun %child-config (context child)
+  (%config context (child-class child) (child-initargs child)))
+
+(defun %start-child (context child)
+  "Start CHILD with a fresh instance from its spec."
+  (let* ((config (%child-config context child))
+         (service (apply #'make-instance (child-class child) config)))
+    (setf (slot-value service 'context) context
+          (child-service child) service
+          (child-config child) config))
+  (%run-child context child))
 
 (defun %mount-options (args)
   "The mount options in ARGS, each once."
@@ -242,7 +305,8 @@ killing. Returns t, :killed, or nil if it is still running."
           (error 'stop-timeout :process (child-process child)
                                :seconds timeout))
         (%reset service)
-        (apply #'reinitialize-instance service (child-initargs child))
+        (apply #'reinitialize-instance service
+               (setf (child-config child) (%child-config context child)))
         (list :ok (%run-child context child)))
     (error (e)
       (a:deletef (slot-value context 'children) child)
@@ -260,14 +324,16 @@ killing. Returns t, :killed, or nil if it is still running."
              (:backoff (setf (child-backoff child) value))
              (:backoff-max (setf (child-backoff-max child) value)))))
 
-(defun %apply-update (context child old new)
-  "Store NEW as CHILD's initargs once its process applies them, or reload it
-if it declines. A child that is not running just stores them."
+(defun %apply-update (context child old new initargs)
+  "Store INITARGS and the config NEW for CHILD once its process applies NEW
+over OLD, or reload it if it declines. A child that is not running just
+stores them."
   (let* ((process (child-process child))
          (shutdown (child-shutdown child))
          (timeout (unless (eq shutdown :infinity) shutdown)))
     (flet ((store ()
-             (setf (child-initargs child) new)
+             (setf (child-initargs child) initargs
+                   (child-config child) new)
              (list :ok process)))
       (if (not (process-alive-p process))
           (store)
@@ -292,9 +358,8 @@ if it declines. A child that is not running just stores them."
 (defun %update (context target initargs options)
   (a:when-let ((child (%find-child context target)))
     (handler-case
-        (let* ((old (child-initargs child))
-               (new (append initargs (apply #'a:remove-from-plist old
-                                            (%plist-keys initargs)))))
+        (let* ((merged (%merge initargs (child-initargs child)))
+               (new (%config context (child-class child) merged)))
           ;; TODO: a probe instance reruns initialize-instance side effects
           ;; and validates initforms, not live state; validate a copy of the
           ;; live instance if that matters.
@@ -302,9 +367,90 @@ if it declines. A child that is not running just stores them."
             (apply #'make-instance (child-class child) new))
           (%set-mount-options child options)
           (if initargs
-              (%apply-update context child old new)
+              (%apply-update context child (child-config child) new merged)
               (list :ok (child-process child))))
       (error (e) (list :error e)))))
+
+(defun %replace-child (context child)
+  "Restart CHILD with a fresh instance, so initargs it lost revert to their
+defaults. It is removed if that fails."
+  (handler-case
+      (let ((timeout (child-shutdown child)))
+        (unless (%stop-and-wait (child-process child) timeout :reload)
+          (error 'stop-timeout :process (child-process child)
+                               :seconds timeout))
+        (list :ok (%start-child context child)))
+    (error (e)
+      (a:deletef (slot-value context 'children) child)
+      (list :error e))))
+
+(defun %changed-configs (context)
+  "(child . config) for each running child whose intercepted config changed."
+  (loop for child in (slot-value context 'children)
+        for config = (%child-config context child)
+        when (and (process-alive-p (child-process child))
+                  (not (equal config (child-config child))))
+          collect (cons child config)))
+
+(defun %refresh (context)
+  "Apply changed intercepts to CONTEXT's children, in place or by reloading
+them, and have nested contexts do the same. Returns the errors."
+  (let ((errors '()))
+    (loop for (child . new) in (%changed-configs context)
+          for old = (child-config child)
+          for result = (handler-case
+                           (progn
+                             (apply #'make-instance (child-class child) new)
+                             (if (subsetp (%plist-keys old) (%plist-keys new))
+                                 (%apply-update context child old new
+                                                (child-initargs child))
+                                 (%replace-child context child)))
+                         (error (e) (list :error e)))
+          when (eq (first result) :error)
+            do (push (second result) errors))
+    (dolist (child (slot-value context 'children))
+      (when (typep (child-service child) 'context)
+        (cast (child-process child) '(%refresh))))
+    (nreverse errors)))
+
+(defun %set-intercept (context intercept)
+  "Replace CONTEXT's intercepts and apply them. Signals INVALID-CONFIG,
+changing nothing, if they or a child's new config don't validate. Returns
+the errors from applying them."
+  (with-slots ((current intercept)) context
+    (let ((previous current))
+      (setf current intercept)
+      (handler-bind ((error (lambda (e)
+                              (declare (ignore e))
+                              (setf current previous))))
+        (a:when-let ((problems (%intercept-problems context)))
+          (error 'invalid-config :service context :problems problems))
+        (loop for (child . config) in (%changed-configs context)
+              do (apply #'make-instance (child-class child) config)))))
+  (%refresh context))
+
+(defun %intercept (context head initargs)
+  (handler-case
+      (let* ((others (remove head (slot-value context 'intercept)
+                             :key #'first :test #'equal))
+             (errors (%set-intercept context
+                                     (if initargs
+                                         (append others (list (cons head initargs)))
+                                         others))))
+        (if errors
+            (list :error (first errors))
+            (list :ok t)))
+    (error (e) (list :error e))))
+
+(defun %warn-errors (context errors)
+  (dolist (e errors)
+    (warn "Applying intercepts under ~a failed: ~a" context e)))
+
+(defmethod update-config ((context context) old new)
+  (when (equal (a:remove-from-plist old :intercept)
+               (a:remove-from-plist new :intercept))
+    (%warn-errors context (%set-intercept context (getf new :intercept)))
+    t))
 
 (defun %restart-p (restart reason)
   (ecase restart
@@ -396,6 +542,8 @@ delay, doubled for each earlier restart within period up to the max if set."
       (%children (mapcar #'%child-info (slot-value context 'children)))
       (%reload (%reload context a b))
       (%update (%update context a b c))
+      (%intercept (%intercept context a b))
+      (%refresh (%warn-errors context (%refresh context)))
       (%child-exit (%child-exit context a b c))
       (%delayed-start (%delayed-start context a b))
       (t (call-next-method)))))

@@ -26,7 +26,7 @@
    #:*debug-services* #:skip-message #:stop-service
    ;; contexts
    #:context #:context-intensity #:context-period #:context-registry
-   #:mount #:unmount #:children #:reload #:update
+   #:mount #:unmount #:children #:reload #:update #:intercept
    #:stop-timeout #:stop-timeout-process #:stop-timeout-seconds
    ;; delegation
    #:agent #:agent-parent #:agent-ref #:delegate

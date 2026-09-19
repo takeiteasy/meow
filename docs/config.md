@@ -1,6 +1,7 @@
 # Config
 
-A [service](services.md)'s config is its slots. Give a slot a `:type` and
+A [service](services.md)'s config is its slots. A context can set it for
+its subtree with [intercepts](intercept.md). Give a slot a `:type` and
 meow checks it. Add a `:validate` function to check the config as a whole.
 
 ```lisp

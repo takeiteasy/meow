@@ -677,3 +677,109 @@
                    (drain))
               "a reloaded context gets a fresh scope")))
       (stop-and-join cp))))
+
+(defun level-of (name &optional (registry meow:*registry*))
+  (meow:call (meow:lookup name :registry registry) :level))
+
+(test intercept-reaches-children-at-any-depth
+  (with-fresh-registry ()
+    (let ((ctx (start-context :intercept '((tunable :level 3)))))
+      (meow:mount ctx 'tunable)
+      (meow:mount ctx 'meow:context :name :inner
+                                    :children '((tunable :name :deep)))
+      (is (= 3 (level-of 'tunable)))
+      (is (= 3 (level-of :deep)))
+      (stop-and-join ctx))))
+
+(test intercept-matches-subclass-and-name
+  (with-fresh-registry ()
+    (let ((ctx (start-context :intercept '((tunable :level 2) (:named :level 7)))))
+      (meow:mount ctx 'live-tunable)
+      (meow:mount ctx 'tunable :name :named)
+      (meow:mount ctx 'provider)
+      (is (= 2 (level-of 'live-tunable)))
+      (is (= 7 (level-of :named)) "later entries win")
+      (is (eq :pong (meow:call (meow:lookup 'provider) :ping)))
+      (stop-and-join ctx))))
+
+(test nearer-intercepts-and-mount-initargs-win
+  (with-fresh-registry ()
+    (let ((ctx (start-context :intercept '((tunable :level 2)))))
+      (meow:mount ctx 'tunable :name :c)
+      (meow:mount ctx 'meow:context
+                  :name :inner :intercept '((tunable :level 3))
+                  :children '((tunable :name :a) (tunable :name :b :level 9)))
+      (is (= 2 (level-of :c)))
+      (is (= 3 (level-of :a)))
+      (is (= 9 (level-of :b)))
+      (stop-and-join ctx))))
+
+(test restarts-reloads-and-updates-keep-intercepts
+  (with-fresh-registry ()
+    (let* ((ctx (start-context :intercept '((tunable :level 4))))
+           (p (meow:mount ctx 'tunable :restart :permanent)))
+      (is (= 4 (meow:call (meow:reload ctx p) :level)))
+      (let ((p2 (meow:lookup 'tunable)))
+        (meow:stop p2 :killed)
+        (is (= 4 (meow:call (restarted ctx 'tunable p2) :level))))
+      (is (= 5 (meow:call (meow:update ctx 'tunable :level 5) :level)))
+      (stop-and-join ctx))))
+
+(test intercept-at-runtime-applies-in-place-or-reloads
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (live (meow:mount ctx 'live-tunable :name :live :reporter (meow:self)))
+           (plain (meow:mount ctx 'tunable :name :plain)))
+      (drain)
+      (is-true (meow:intercept ctx 'tunable :level 6))
+      (is (has '(:live :update nil 6) (drain)))
+      (is (eq live (meow:lookup :live)))
+      (is (= 6 (level-of :live)))
+      (is (not (eq plain (meow:lookup :plain))))
+      (is (= 6 (level-of :plain)))
+      (stop-and-join ctx))))
+
+(test removing-an-intercept-reverts-to-defaults
+  (with-fresh-registry ()
+    (let ((ctx (start-context)))
+      (meow:mount ctx 'live-tunable)
+      (meow:intercept ctx 'tunable :level 6)
+      (let ((p (meow:lookup 'live-tunable)))
+        (is-true (meow:intercept ctx 'tunable))
+        (is (not (eq p (meow:lookup 'live-tunable))) "restarted fresh")
+        (is (= 1 (level-of 'live-tunable))))
+      (stop-and-join ctx))))
+
+(test intercept-reaches-nested-contexts
+  (with-fresh-registry ()
+    (let ((ctx (start-context)))
+      (meow:mount ctx 'meow:context :name :inner :children '((tunable)))
+      (meow:intercept ctx 'tunable :level 8)
+      (is-true (eventually (lambda () (eql 8 (level-of 'tunable)))))
+      (stop-and-join ctx))))
+
+(test invalid-intercept-changes-nothing
+  (with-fresh-registry ()
+    (signals meow:invalid-config
+      (make-instance 'meow:context :intercept '((tunable :level))))
+    (signals meow:invalid-config
+      (make-instance 'meow:context :intercept '((tunable :restart :permanent))))
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'tunable)))
+      (signals meow:invalid-config (meow:intercept ctx 'tunable :level "high"))
+      (is (eq p (meow:lookup 'tunable)))
+      (meow:unmount ctx 'tunable)
+      (meow:mount ctx 'tunable)
+      (is (= 1 (level-of 'tunable)) "the intercept was not kept")
+      (stop-and-join ctx))))
+
+(test updating-intercept-keeps-mounted-children
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (inner (meow:mount ctx 'meow:context :name :inner))
+           (p (meow:mount inner 'tunable)))
+      (is (eq inner (meow:update ctx :inner :intercept '((tunable :level 5)))))
+      (is (= 5 (level-of 'tunable)))
+      (is (equal (list (meow:lookup 'tunable)) (mapcar #'second (child-summary inner))))
+      (is (not (eq p (meow:lookup 'tunable))) "tunable declined in place")
+      (stop-and-join ctx))))

@@ -26,6 +26,7 @@ child.
 | `(children ctx)` | A plist `(:name :process :restart :state :restart-in)` for each child, in mount order. See [backoff](#backoff) for `:state`. |
 | `(reload ctx child &key timeout)` | Restart `child` with the same instance. See [hot reload](reload.md). |
 | `(update ctx child &rest initargs)` | Change `child`'s initargs and mount options while it runs. See [updating config](update.md). |
+| `(intercept ctx head &rest initargs)` | Set config for matching children in the subtree. See [intercepts](intercept.md). |
 | `(context-registry ctx)` | The registry its children use. See [isolation](isolation.md). |
 
 Children use the context's registry, or a scoped one if it
