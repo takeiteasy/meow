@@ -132,6 +132,9 @@
     (let ((ctx (start-context)))
       (signals meow:invalid-config (meow:mount ctx 'configured :port 80))
       (signals meow:invalid-config (meow:mount ctx 'meow:context :intensity -1))
+      (signals meow:invalid-config
+        (meow:mount ctx 'meow:context :restart-delay -1))
+      (signals type-error (meow:mount ctx 'provider :backoff -1))
       (is (null (meow:children ctx)))
       (stop-and-join ctx))))
 
@@ -243,7 +246,9 @@
 
 (test invalid-child-specs-signal-invalid-config
   (dolist (children '(provider ((provider :restart)) ((provider :restart :sometimes))
-                      (("provider")) ((provider :shutdown -1))))
+                      (("provider")) ((provider :shutdown -1))
+                      ((provider :backoff -1))
+                      ((provider :backoff-max :soon))))
     (signals meow:invalid-config
       (make-instance 'meow:context :children children))))
 
@@ -253,27 +258,59 @@
       (start-context :children '((provider) (configured :port 80))))
     (is (null (meow:names)) "children started before the failure are stopped")))
 
+;;; Stopping and kill escalation
+
 (defun stuck-child (context &rest initargs)
-  "Mount a provider and keep it busy for half a second."
+  "Mount a provider and keep it busy in handle for half a second."
   (let ((p (apply #'meow:mount context 'provider initargs)))
     (meow:cast p '(:sleep 0.5))
     p))
 
-(test unmount-reports-a-child-that-misses-its-timeout
+(meow:defservice stubborn (reporting) ())
+
+(defmethod meow:dispose :before ((s stubborn) reason)
+  (declare (ignore reason))
+  (sleep 0.5))
+
+(test unmount-kills-a-child-that-misses-its-timeout
   (with-fresh-registry ()
     (let* ((ctx (start-context))
-           (p (stuck-child ctx)))
-      (is (eq :timeout (meow:unmount ctx 'provider :timeout 0.05)))
+           (p (stuck-child ctx :reporter (meow:self)))
+           (start (progn (drain) (now))))
+      (is (eq :killed (meow:unmount ctx 'provider :timeout 0.05)))
+      (is (< (- (now) start) 0.4))
+      (is (eq :killed (meow:process-exit-reason p)))
+      (is (equal (list 'provider :disposed :killed p) (meow:receive :timeout 1)))
+      (is (null (meow:lookup 'provider)))
       (is (null (meow:children ctx)))
-      (is (eq p (meow:lookup 'provider)) "still registered until it exits")
+      (stop-and-join ctx))))
+
+(test unmount-reports-a-child-stuck-in-dispose
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'stubborn)))
+      (is (eq :timeout (meow:unmount ctx 'stubborn :timeout 0.05)))
+      (is (null (meow:children ctx)))
+      (is (eq p (meow:lookup 'stubborn)) "still registered until it exits")
       (join p)
+      (is (eq :shutdown (meow:process-exit-reason p)))
+      (stop-and-join ctx))))
+
+(test reload-kills-a-stuck-child
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (stuck-child ctx :shutdown 0.05))
+           (p2 (meow:reload ctx 'provider)))
+      (is (eq :killed (meow:process-exit-reason p)))
+      (is (eq :pong (meow:call p2 :ping)))
+      (is (eq p2 (meow:lookup 'provider)))
       (stop-and-join ctx))))
 
 (test reload-signals-stop-timeout
   (with-fresh-registry ()
     (let* ((ctx (start-context))
-           (p (stuck-child ctx :shutdown 0.05)))
-      (handler-case (progn (meow:reload ctx 'provider) (fail "no error"))
+           (p (meow:mount ctx 'stubborn :shutdown 0.05)))
+      (handler-case (progn (meow:reload ctx 'stubborn) (fail "no error"))
         (meow:stop-timeout (e)
           (is (eq p (meow:stop-timeout-process e)))
           (is (= 0.05 (meow:stop-timeout-seconds e)))))
@@ -281,16 +318,119 @@
       (join p)
       (stop-and-join ctx))))
 
+(defmacro with-teardown-reports ((var) &body body)
+  "Run BODY with VAR collecting (condition-type process) teardown reports."
+  `(let ((,var '()))
+     (setf meow:*teardown-error-hook*
+           (lambda (condition source)
+             (push (list (type-of condition) (meow:service-process source))
+                   ,var)))
+     (unwind-protect (progn ,@body)
+       (setf meow:*teardown-error-hook* nil))))
+
+(test teardown-kills-stuck-children
+  (with-fresh-registry ()
+    (with-teardown-reports (reports)
+      (let* ((ctx (start-context))
+             (p (stuck-child ctx :shutdown 0.05)))
+        (stop-and-join ctx)
+        (is (null reports))
+        (is (eq :killed (meow:process-exit-reason p)))
+        (is (null (meow:names)))))))
+
 (test teardown-reports-children-that-miss-their-shutdown
   (with-fresh-registry ()
-    (let* ((reports '())
-           (ctx (start-context))
-           (p (stuck-child ctx :shutdown 0.05)))
-      (setf meow:*teardown-error-hook*
-            (lambda (condition source)
-              (push (list (type-of condition) (meow:service-process source))
-                    reports)))
-      (unwind-protect (stop-and-join ctx)
-        (setf meow:*teardown-error-hook* nil))
-      (is (equal (list (list 'meow:stop-timeout ctx)) reports))
-      (join p))))
+    (with-teardown-reports (reports)
+      (let* ((ctx (start-context))
+             (p (meow:mount ctx 'stubborn :shutdown 0.05)))
+        (stop-and-join ctx)
+        (is (equal (list (list 'meow:stop-timeout ctx)) reports))
+        (join p)))))
+
+(test stuck-declared-child-does-not-block-context-restart
+  (with-fresh-registry ()
+    (let* ((root (start-context))
+           (inner (meow:mount root 'meow:context
+                              :name :inner :restart :permanent
+                              :children '((provider :shutdown 0.05)))))
+      (meow:cast (child-process inner 'provider) '(:sleep 0.5))
+      (meow:stop inner :killed)
+      (let ((inner2 (restarted root :inner inner)))
+        (is-true inner2)
+        (is (eq :pong (meow:call (child-process inner2 'provider) :ping))))
+      (is (null (drain 0.5)) "the killed provider sends nothing more")
+      (stop-and-join root))))
+
+;;; Restart backoff
+
+(defun restart-times (context name count)
+  "Kill NAME COUNT times, returning the seconds each restart took."
+  (loop repeat count
+        collect (let ((p (child-process context name))
+                      (start (now)))
+                  (meow:stop p :killed)
+                  (restarted context name p)
+                  (- (now) start))))
+
+(test restart-delay-is-fixed-without-a-max
+  (with-fresh-registry ()
+    (let* ((ctx (start-context :restart-delay 0.2))
+           (p (meow:mount ctx 'provider :restart :permanent))
+           (start (now)))
+      (meow:stop p :killed)
+      (sleep 0.1)
+      (is (eq p (child-process ctx 'provider)) "the mailbox is not blocked")
+      (is-true (restarted ctx 'provider p))
+      (is (<= 0.2 (- (now) start)))
+      (is (every (lambda (time) (<= 0.2 time 0.35))
+                 (restart-times ctx 'provider 2)))
+      (stop-and-join ctx))))
+
+(test restart-delay-doubles-up-to-max
+  (with-fresh-registry ()
+    (let ((ctx (start-context :restart-delay 0.05 :restart-delay-max 0.2
+                              :intensity 10)))
+      (meow:mount ctx 'provider :restart :permanent)
+      (is (every #'<= '(0.05 0.1 0.2 0.2)
+                 (restart-times ctx 'provider 4)))
+      (stop-and-join ctx))))
+
+(test child-restart-delay-overrides-context
+  (with-fresh-registry ()
+    (let ((ctx (start-context :restart-delay 1)))
+      (meow:mount ctx 'provider :restart :permanent :backoff 0)
+      (meow:mount ctx 'consumer :restart :permanent :backoff 0.1
+                                :backoff-max 0.1)
+      (is (every (lambda (time) (< time 0.1))
+                 (restart-times ctx 'provider 2)))
+      (is (every (lambda (time) (<= 0.1 time 0.9))
+                 (restart-times ctx 'consumer 2)))
+      (stop-and-join ctx))))
+
+(test unmount-cancels-a-pending-restart
+  (with-fresh-registry ()
+    (let* ((ctx (start-context :restart-delay 0.1))
+           (p (meow:mount ctx 'provider :restart :permanent)))
+      (meow:stop p :killed)
+      (join p)
+      (is-true (meow:unmount ctx 'provider))
+      (sleep 0.2)
+      (is (null (meow:children ctx)))
+      (is (null (meow:lookup 'provider)))
+      (stop-and-join ctx))))
+
+(test failed-restart-is-retried-after-the-delay
+  (with-fresh-registry ()
+    (let* ((ctx (start-context :restart-delay 0.1))
+           (p (meow:mount ctx 'provider :restart :permanent)))
+      (meow:stop p :killed)
+      (join p)
+      (meow:register 'provider (meow:self))
+      (sleep 0.25)
+      (is (eq p (child-process ctx 'provider)) "start failed and was retried")
+      (is (meow:process-alive-p ctx))
+      (meow:unregister 'provider)
+      (let ((p2 (restarted ctx 'provider p)))
+        (is-true p2)
+        (is (eq p2 (meow:lookup 'provider))))
+      (stop-and-join ctx))))

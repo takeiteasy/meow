@@ -1,8 +1,5 @@
 (in-package #:meow)
 
-;;; TODO: restarts happen immediately, with no backoff; add a delay if a
-;;; flapping child can starve its context.
-
 (deftype %restart-type () '(member :permanent :transient :temporary))
 
 (defun %spec-problems (context)
@@ -16,7 +13,13 @@
                              "has an invalid :restart")
                             ((not (typep (getf (rest spec) :shutdown 5)
                                          '(real 0)))
-                             "has an invalid :shutdown"))
+                             "has an invalid :shutdown")
+                            ((not (typep (getf (rest spec) :backoff)
+                                         '(or null (real 0))))
+                             "has an invalid :backoff")
+                            ((not (typep (getf (rest spec) :backoff-max)
+                                         '(or null (real 0))))
+                             "has an invalid :backoff-max"))
         when problem
           collect (format nil "children: ~s ~a" spec problem)))
 
@@ -25,13 +28,18 @@
               :reader context-intensity)
    (period :initarg :period :initform 10 :type (real 0)
            :reader context-period)
+   (restart-delay :initarg :restart-delay :initform 0 :type (real 0))
+   (restart-delay-max :initarg :restart-delay-max :initform nil
+                      :type (or null (real 0)))
    (specs :initarg :children :initform '() :type list)
    (children :initform '())
    (restarts :initform '()))
   (:validate %spec-problems))
 
-(defstruct (child (:constructor make-child (class initargs restart shutdown)))
-  class initargs restart shutdown name process service)
+(defstruct (child (:constructor make-child (class initargs restart shutdown
+                                            backoff backoff-max)))
+  class initargs restart shutdown backoff backoff-max
+  name process service (restarts '()) pending)
 
 (define-condition stop-timeout (error)
   ((process :initarg :process :reader stop-timeout-process)
@@ -48,12 +56,14 @@ running."
       (error "Context ~a failed: ~s" context status))
     reply))
 
-(defun mount (context class &rest initargs &key restart shutdown
-                                             &allow-other-keys)
+(defun mount (context class &rest initargs
+              &key restart shutdown backoff backoff-max &allow-other-keys)
   "Start a service of CLASS with INITARGS under CONTEXT and return its
 process. RESTART is :permanent, :transient (default) or :temporary. SHUTDOWN
-is how many seconds it gets to stop (default 5)."
-  (declare (ignore restart shutdown))
+is how many seconds it gets to stop (default 5) before it is killed.
+BACKOFF and BACKOFF-MAX override the context's :restart-delay and
+:restart-delay-max."
+  (declare (ignore restart shutdown backoff backoff-max))
   (destructuring-bind (status value)
       (%context-call context (list '%mount class initargs))
     (if (eq status :ok)
@@ -62,8 +72,9 @@ is how many seconds it gets to stop (default 5)."
 
 (defun unmount (context child &key timeout)
   "Stop CHILD of CONTEXT, a name or process, without restarting it, waiting
-up to TIMEOUT seconds (default its shutdown) for it to exit. Returns t,
-:timeout if it is still running, or nil if CHILD is not mounted."
+up to TIMEOUT seconds (default its shutdown) for it to exit before killing
+it. Returns t, :killed, :timeout if it is still running after being killed,
+or nil if CHILD is not mounted."
   (%context-call context (list '%unmount child timeout)))
 
 (defun children (context)
@@ -83,8 +94,9 @@ STOP-TIMEOUT, or to start, it is removed and the error is signalled."
           (error value)))))
 
 (defun %stop-and-wait (process timeout &optional (reason :shutdown))
-  "Stop PROCESS and wait up to TIMEOUT seconds for its exit hooks to run.
-Returns true if they did."
+  "Stop PROCESS and wait up to TIMEOUT seconds for its exit hooks to run,
+then kill it and wait as long again. Returns t, :killed, or nil if it is
+still running."
   ;; Hooks run in the order added, so this one fires after dispose and
   ;; unregistration.
   (let ((done (bt2:make-semaphore :name "exit")))
@@ -93,9 +105,12 @@ Returns true if they did."
                                  (bt2:signal-semaphore done)))
         (progn
           (stop process reason)
-          ;; TODO: a process that misses the timeout keeps running; add kill
-          ;; escalation if stuck children must be reclaimed.
-          (bt2:wait-on-semaphore done :timeout timeout))
+          (cond ((bt2:wait-on-semaphore done :timeout timeout) t)
+                ;; The interrupt can leave shared state inconsistent, and
+                ;; can't reach a process already in its exit hooks.
+                (t (%kill process)
+                   (when (bt2:wait-on-semaphore done :timeout timeout)
+                     (if (eq (process-exit-reason process) :killed) :killed t)))))
         t)))
 
 (defun %run-child (context child)
@@ -106,7 +121,8 @@ Returns true if they did."
                                  :registry (service-registry context)
                                  :debug (slot-value context 'debug))))
     (setf (child-name child) (service-name service)
-          (child-process child) process)
+          (child-process child) process
+          (child-pending child) nil)
     (unless (add-exit-hook process (lambda (process reason)
                                      (cast self (list '%child-exit child
                                                       process reason))))
@@ -123,12 +139,16 @@ Returns true if they did."
 (defun %add-child (context class args)
   "Start a child from mount ARGS and add it to CONTEXT. Returns its process."
   (destructuring-bind (&key (restart :transient) (shutdown 5)
-                       &allow-other-keys)
+                         backoff backoff-max &allow-other-keys)
       args
     (check-type restart %restart-type)
     (check-type shutdown (real 0))
-    (let* ((child (make-child class (a:remove-from-plist args :restart :shutdown)
-                              restart shutdown))
+    (check-type backoff (or null (real 0)))
+    (check-type backoff-max (or null (real 0)))
+    (let* ((child (make-child class
+                              (a:remove-from-plist args :restart :shutdown
+                                                   :backoff :backoff-max)
+                              restart shutdown backoff backoff-max))
            (process (%start-child context child)))
       (a:appendf (slot-value context 'children) (list child))
       process)))
@@ -151,9 +171,8 @@ Returns true if they did."
   (with-slots (children) context
     (a:when-let ((child (%find-child context target)))
       (a:deletef children child)
-      (if (%stop-and-wait (child-process child)
+      (or (%stop-and-wait (child-process child)
                           (or timeout (child-shutdown child)))
-          t
           :timeout))))
 
 (defun %reload (context target timeout)
@@ -187,15 +206,53 @@ restarts fall within period seconds."
       (when (> (length restarts) intensity)
         (exit :restart-limit)))))
 
+(defun %restart-delay (context child)
+  "Record a restart of CHILD and return how long to wait before it: the base
+delay, doubled for each earlier restart within period up to the max if set."
+  (with-slots (period restart-delay restart-delay-max) context
+    (let* ((now (%now))
+           (base (or (child-backoff child) restart-delay))
+           (max (or (child-backoff-max child) restart-delay-max))
+           (count (length (setf (child-restarts child)
+                                (cons now (remove-if (lambda (time)
+                                                       (> (- now time) period))
+                                                     (child-restarts child)))))))
+      (if max
+          (min max (* base (expt 2 (1- count))))
+          base))))
+
+;;; TODO: one sleeping thread per pending restart, which outlives a stopped
+;;; context; use a shared timer if restart counts grow.
+(defun %restart-child (context child)
+  "Restart CHILD after its backoff delay, without blocking CONTEXT."
+  (%note-restart context)
+  (let ((delay (%restart-delay context child)))
+    (if (zerop delay)
+        (%try-start context child)
+        (let ((self (self))
+              (token (setf (child-pending child) (list child))))
+          (bt2:make-thread (lambda ()
+                             (sleep delay)
+                             (cast self (list '%delayed-start child token)))
+                           :name "meow restart delay")))))
+
+(defun %try-start (context child)
+  (handler-case (%start-child context child)
+    (error () (%restart-child context child))))
+
+(defun %delayed-start (context child token)
+  "Start CHILD unless it was removed or started since TOKEN was scheduled."
+  (when (and (member child (slot-value context 'children))
+             (eq token (child-pending child)))
+    (%try-start context child)))
+
 (defun %child-exit (context child process reason)
   "Handle an exit of CHILD, ignoring one from a process it has replaced."
   (with-slots (children) context
     (when (and (member child children)
                (eq process (child-process child)))
       (if (%restart-p (child-restart child) reason)
-          (loop (%note-restart context)
-                (handler-case (return (%start-child context child))
-                  (error () nil)))
+          (%restart-child context child)
           (a:deletef children child)))))
 
 (defmethod handle ((context context) message)
@@ -211,6 +268,7 @@ restarts fall within period seconds."
                          (slot-value context 'children)))
       (%reload (%reload context a b))
       (%child-exit (%child-exit context a b c))
+      (%delayed-start (%delayed-start context a b))
       (t (call-next-method)))))
 
 (defmethod %teardown :before ((context context) reason)

@@ -18,8 +18,8 @@ child.
 
 | Call | Purpose |
 |---|---|
-| `(mount ctx class &rest initargs &key restart shutdown)` | Start a service of `class` and return its process. `shutdown` is how many seconds it gets to stop (default 5). Start errors, such as `already-registered`, are signalled in the caller. |
-| `(unmount ctx child &key timeout)` | Stop `child`, a name or process, without restarting it, waiting up to `timeout` seconds (default its `shutdown`) for `dispose` and unregistration to finish. Returns `t`, `:timeout` if it is still running, or nil if `child` isn't mounted. |
+| `(mount ctx class &rest initargs &key restart shutdown backoff backoff-max)` | Start a service of `class` and return its process. `shutdown` is how many seconds it gets to stop (default 5). `backoff` and `backoff-max` override the context's [restart delay](#backoff). Start errors, such as `already-registered`, are signalled in the caller. |
+| `(unmount ctx child &key timeout)` | Stop `child`, a name or process, without restarting it. See [stopping](#stopping). Returns `t`, `:killed`, `:timeout` if it is still running, or nil if `child` isn't mounted. |
 | `(children ctx)` | `(name process restart)` for each child, in mount order. |
 | `(reload ctx child &key timeout)` | Restart `child` with the same instance. See [hot reload](reload.md). |
 
@@ -58,14 +58,32 @@ A restart makes a fresh instance from `class` and `initargs`.
 A child that exits and isn't restarted is removed from `children`. The
 exit of a [reloaded](reload.md) child's old process is ignored.
 
+## Backoff
+
+A context waits `:restart-delay` seconds (default 0) before each
+restart. With `:restart-delay-max` set, the delay doubles for each
+earlier restart of that child within `:period`, up to that maximum. A
+child's `:backoff` and `:backoff-max` override both.
+
+```lisp
+(start-service (make-instance 'context :name :app
+                                       :restart-delay 0.1
+                                       :restart-delay-max 5))
+(mount *app* 'flaky :restart :permanent :backoff 1)
+```
+
+The context keeps handling messages while it waits. `children` lists the
+exited process until the restart, and a child unmounted or reloaded in
+the meantime isn't restarted.
+
 ## Intensity
 
 A context allows up to `:intensity` restarts (default 5) within
 `:period` seconds (default 10). The next restart after that stops the
 context with reason `:restart-limit` instead. A restart whose start
-signals an error counts toward the limit and is tried again, so a child
-whose [config](config.md) no longer validates stops the context with
-`:restart-limit`.
+signals an error counts toward the limit and is tried again after the
+next delay, so a child whose [config](config.md) no longer validates
+stops the context with `:restart-limit`.
 
 ## Stopping
 
@@ -73,13 +91,21 @@ When a context stops for any reason, it stops its children in reverse
 mount order and waits up to each one's `shutdown` seconds. Then it unwinds
 its own [effects](effects.md), runs `dispose` and unregisters.
 
-A child that misses its timeout, for example one stuck in `handle`, keeps
-running unsupervised and stays registered until it exits. The context
-reports it as a `stop-timeout` condition (with `stop-timeout-process` and
-`stop-timeout-seconds`) through `*teardown-error-hook*`, or prints a
-warning. `unmount` returns `:timeout` and `reload` signals `stop-timeout`
-in the same case. A declared child that is still registered blocks its
-context's restart, which then escalates to `:restart-limit`.
+A child that misses its timeout, for example one stuck in `handle`, is
+killed: its thread is interrupted to exit with `:killed`, which still
+unwinds its effects, runs `dispose` and unregisters it. `unmount` returns
+`:killed` in that case. The interrupt can land anywhere, so state the
+child shared with other threads may be left inconsistent.
+
+The kill can't reach a child that is already exiting, such as one stuck
+in `dispose`. If it is still running `shutdown` seconds after the kill,
+it is left running unsupervised and stays registered until it exits. The
+context reports it as a `stop-timeout` condition (with
+`stop-timeout-process` and `stop-timeout-seconds`) through
+`*teardown-error-hook*`, or prints a warning. `unmount` returns `:timeout`
+and `reload` signals `stop-timeout` in the same case. A declared child
+that is still registered blocks its context's restart, which then
+escalates to `:restart-limit`.
 
 ## Nesting
 

@@ -68,6 +68,9 @@ unwind a bt2 thread. Falls back to printing if the hook itself fails."
         (error (e)
           (%teardown-failed e process))))))
 
+(defvar *%running* nil
+  "True while the current process's body can still be exited.")
+
 (defun %run (process function)
   "Run FUNCTION as PROCESS and return its values. The exit reason is :normal
 on return, the value passed to EXIT, (:error condition) on an unhandled
@@ -78,7 +81,8 @@ error, or :aborted on any other non-local exit."
     (unwind-protect
          (handler-bind ((error (lambda (e) (setf reason (list :error e)))))
            (setf reason (catch '%exit
-                          (setf results (multiple-value-list (funcall function)))
+                          (let ((*%running* t))
+                            (setf results (multiple-value-list (funcall function))))
                           :normal)))
       (%exit process reason))
     (values-list results)))
@@ -87,6 +91,15 @@ error, or :aborted on any other non-local exit."
   "End the current process with REASON."
   (%require-self)
   (throw '%exit reason))
+
+(defun %kill (process)
+  "Interrupt PROCESS's thread to exit with :killed. Does nothing once it is
+already exiting, so its exit hooks still run."
+  (ignore-errors
+   (bt2:interrupt-thread (process-thread process)
+                         (lambda ()
+                           (when *%running*
+                             (exit :killed))))))
 
 (defun spawn (function &key name)
   "Run FUNCTION in a new thread as a new process."

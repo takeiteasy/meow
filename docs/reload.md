@@ -22,10 +22,11 @@ child's `shutdown`.
 3. It starts in a new process. `ready` runs again once its dependencies
    are present.
 
-If the child doesn't stop within `timeout` seconds, or fails to start, it
-is removed from the context and the error is signalled in the caller. A
-missed timeout signals `stop-timeout`, and the old process keeps running
-until it exits.
+A child that misses `timeout` is [killed](contexts.md#stopping) and the
+reload goes ahead. If it still hasn't stopped `timeout` seconds after the
+kill, or fails to start, it is removed from the context and the error is
+signalled in the caller. A missed kill signals `stop-timeout`, and the old
+process keeps running until it exits.
 
 ## What survives
 
