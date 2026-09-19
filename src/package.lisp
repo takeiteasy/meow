@@ -18,7 +18,7 @@
    #:service #:defservice #:start-service
    #:service-name #:service-registry #:service-context #:service-process #:service-ready-p
    #:service-dependencies #:dependency
-   #:metadata #:ready #:dep-down #:handle #:dispose
+   #:metadata #:ready #:dep-down #:handle #:dispose #:update-config
    #:effect #:with-effect
    ;; config
    #:invalid-config #:invalid-config-service #:invalid-config-problems
@@ -26,7 +26,7 @@
    #:*debug-services* #:skip-message #:stop-service
    ;; contexts
    #:context #:context-intensity #:context-period
-   #:mount #:unmount #:children #:reload
+   #:mount #:unmount #:children #:reload #:update
    #:stop-timeout #:stop-timeout-process #:stop-timeout-seconds
    ;; delegation
    #:agent #:agent-parent #:agent-ref #:delegate

@@ -18,6 +18,7 @@ meow checks it. Add a `:validate` function to check the config as a whole.
 
 The config is checked after `make-instance` and `reinitialize-instance`,
 so a bad config never reaches `start-service`, `mount` or `reload`.
+[`update`](update.md) validates new initargs before touching the child.
 
 1. Every bound slot with a `:type` is checked with `typep`.
 2. If every slot type checks out, each `:validate` function runs.

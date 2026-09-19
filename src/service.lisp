@@ -44,6 +44,14 @@ the service stops. START-SERVICE captures the value.")
     (declare (ignore reason))
     nil))
 
+(defgeneric update-config (service old new)
+  (:documentation "Called on SERVICE's process by UPDATE with its OLD and NEW
+initargs, before its slots change. Return true to have NEW applied in place;
+nil reloads SERVICE instead.")
+  (:method ((service service) old new)
+    (declare (ignore old new))
+    nil))
+
 (define-condition invalid-config (error)
   ((service :initarg :service :reader invalid-config-service)
    (problems :initarg :problems :reader invalid-config-problems))
@@ -263,10 +271,19 @@ An unhandled error enters the debugger or stops SERVICE."
         :report "Stop the service."
         (exit (list :error condition))))))
 
+(defun %apply-config (service old new)
+  "T if UPDATE-CONFIG applied NEW in place, nil if it declined, or the error
+it signalled."
+  (handler-case (when (update-config service old new)
+                  (apply #'reinitialize-instance service new)
+                  t)
+    (error (e) e)))
+
 (defun %handle (service message)
-  (if (%delivery-p message)
-      (%deliver message)
-      (handle service message)))
+  (cond ((%delivery-p message) (%deliver message))
+        ((and (a:proper-list-p message) (eq (first message) '%update-config))
+         (apply #'%apply-config service (rest message)))
+        (t (handle service message))))
 
 (defgeneric %dispatch (service message))
 

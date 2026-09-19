@@ -107,6 +107,26 @@ STOP-TIMEOUT, or to start, it is removed and the error is signalled."
           value
           (error value)))))
 
+(defun update (context child &rest initargs)
+  "Merge INITARGS into the initargs CHILD of CONTEXT, a name or process, was
+mounted with, and use them for its restarts and reloads. :RESTART, :SHUTDOWN,
+:BACKOFF and :BACKOFF-MAX replace its mount options. Changed initargs are
+validated, then passed to UPDATE-CONFIG on the child's process; unless it
+returns true, the child is reloaded. Returns the child's process, or nil if
+CHILD is not mounted. INVALID-CONFIG and reload errors are signalled here."
+  (let ((options (%mount-options initargs)))
+    (apply #'%check-mount-options options)
+    (a:when-let ((result (%context-call
+                          context
+                          (list '%update child
+                                (apply #'a:remove-from-plist initargs
+                                       (%plist-keys options))
+                                options))))
+      (destructuring-bind (status value) result
+        (if (eq status :ok)
+            value
+            (error value))))))
+
 (defun %stop-and-wait (process timeout &optional (reason :shutdown))
   "Stop PROCESS and wait up to TIMEOUT seconds for its exit hooks to run,
 then kill it and wait as long again. A TIMEOUT of :infinity waits without
@@ -153,19 +173,34 @@ killing. Returns t, :killed, or nil if it is still running."
           (child-service child) service))
   (%run-child context child))
 
+(defun %plist-keys (plist)
+  (loop for key in plist by #'cddr collect key))
+
+(defun %mount-options (args)
+  "The mount options in ARGS, each once."
+  (loop for key in '(:restart :shutdown :backoff :backoff-max)
+        for tail = (nth-value 2 (get-properties args (list key)))
+        when tail
+          append (list key (second tail))))
+
+(defun %check-mount-options (&key (restart :transient) (shutdown 5)
+                               backoff backoff-max)
+  (check-type restart %restart-type)
+  (check-type shutdown %shutdown-type)
+  (check-type backoff (or null (real 0)))
+  (check-type backoff-max (or null (real 0))))
+
 (defun %add-child (context class args)
   "Start a child from mount ARGS and add it to CONTEXT. Returns its process."
-  (destructuring-bind (&key (restart :transient) (shutdown 5)
-                         backoff backoff-max &allow-other-keys)
-      args
-    (check-type restart %restart-type)
-    (check-type shutdown %shutdown-type)
-    (check-type backoff (or null (real 0)))
-    (check-type backoff-max (or null (real 0)))
+  (let ((options (%mount-options args)))
+    (apply #'%check-mount-options options)
     (let* ((child (make-child class
-                              (a:remove-from-plist args :restart :shutdown
-                                                   :backoff :backoff-max)
-                              restart shutdown backoff backoff-max))
+                              (apply #'a:remove-from-plist args
+                                     (%plist-keys options))
+                              (getf options :restart :transient)
+                              (getf options :shutdown 5)
+                              (getf options :backoff)
+                              (getf options :backoff-max)))
            (process (%start-child context child)))
       (a:appendf (slot-value context 'children) (list child))
       process)))
@@ -192,20 +227,77 @@ killing. Returns t, :killed, or nil if it is still running."
                           (or timeout (child-shutdown child)))
           :timeout))))
 
+(defun %reload-child (context child timeout)
+  (handler-case
+      (let ((service (child-service child))
+            (timeout (or timeout (child-shutdown child))))
+        (unless (%stop-and-wait (child-process child) timeout :reload)
+          (error 'stop-timeout :process (child-process child)
+                               :seconds timeout))
+        (%reset service)
+        (apply #'reinitialize-instance service (child-initargs child))
+        (list :ok (%run-child context child)))
+    (error (e)
+      (a:deletef (slot-value context 'children) child)
+      (list :error e))))
+
 (defun %reload (context target timeout)
   (a:when-let ((child (%find-child context target)))
+    (%reload-child context child timeout)))
+
+(defun %set-mount-options (child options)
+  (loop for (key value) on options by #'cddr
+        do (ecase key
+             (:restart (setf (child-restart child) value))
+             (:shutdown (setf (child-shutdown child) value))
+             (:backoff (setf (child-backoff child) value))
+             (:backoff-max (setf (child-backoff-max child) value)))))
+
+(defun %apply-update (context child old new)
+  "Store NEW as CHILD's initargs once its process applies them, or reload it
+if it declines. A child that is not running just stores them."
+  (let* ((process (child-process child))
+         (shutdown (child-shutdown child))
+         (timeout (unless (eq shutdown :infinity) shutdown)))
+    (flet ((store ()
+             (setf (child-initargs child) new)
+             (list :ok process)))
+      (if (not (process-alive-p process))
+          (store)
+          (multiple-value-bind (applied status)
+              (call process (list '%update-config old new) :timeout timeout)
+            (case (if (consp status) (first status) status)
+              ((nil :timeout)
+               (when (typep applied 'error)
+                 (return-from %apply-update (list :error applied)))
+               (store)
+               (if applied
+                   (list :ok process)
+                   (%reload-child context child nil)))
+              (:down (store))
+              (:deadlock
+               (list :error (make-condition
+                             'simple-error
+                             :format-control "Updating ~a would deadlock: ~{~a~^ -> ~}"
+                             :format-arguments (list process (second status)))))
+              (t (list :error (second status)))))))))
+
+(defun %update (context target initargs options)
+  (a:when-let ((child (%find-child context target)))
     (handler-case
-        (let ((service (child-service child))
-              (timeout (or timeout (child-shutdown child))))
-          (unless (%stop-and-wait (child-process child) timeout :reload)
-            (error 'stop-timeout :process (child-process child)
-                                 :seconds timeout))
-          (%reset service)
-          (apply #'reinitialize-instance service (child-initargs child))
-          (list :ok (%run-child context child)))
-      (error (e)
-        (a:deletef (slot-value context 'children) child)
-        (list :error e)))))
+        (let* ((old (child-initargs child))
+               (new (append initargs (apply #'a:remove-from-plist old
+                                            (%plist-keys initargs)))))
+          ;; TODO: a probe instance reruns initialize-instance side effects
+          ;; and validates initforms, not live state; validate a copy of the
+          ;; live instance if that matters.
+          (when initargs
+            (apply #'make-instance (child-class child) new))
+          (%set-mount-options child options)
+          (if initargs
+              (%apply-update context child old new)
+              (list :ok (child-process child))))
+      (error (e) (list :error e)))))
 
 (defun %restart-p (restart reason)
   (ecase restart
@@ -296,6 +388,7 @@ delay, doubled for each earlier restart within period up to the max if set."
       (%unmount (%unmount context a b))
       (%children (mapcar #'%child-info (slot-value context 'children)))
       (%reload (%reload context a b))
+      (%update (%update context a b c))
       (%child-exit (%child-exit context a b c))
       (%delayed-start (%delayed-start context a b))
       (t (call-next-method)))))

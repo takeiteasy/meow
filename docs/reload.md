@@ -18,7 +18,8 @@ child's `shutdown`; `:infinity` waits without killing.
    unwind, `dispose` runs, and its name is unregistered, so dependants get
    `dep-down` with `:reload`.
 2. The instance is re-initialised with `reinitialize-instance` and the
-   initargs it was mounted with, which [validates](config.md) it.
+   initargs it was mounted with, or last [updated](update.md) with,
+   which [validates](config.md) it.
 3. It starts in a new process. `ready` runs again once its dependencies
    are present.
 
@@ -31,7 +32,7 @@ rather than `:reload`, and its dependants see that reason in `dep-down`.
 
 ## What survives
 
-Only the initargs passed to `mount` are applied again. Every other slot
+Only the initargs passed to `mount` and `update` are applied again. Every other slot
 keeps its value, including runtime state set in `ready` or `handle`.
 Anything the old process held as an effect has been released.
 

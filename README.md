@@ -8,7 +8,7 @@ call/cast, a name registry with subscribe and await, CLOS services that
 wait for their dependencies in any mount order, contexts that supervise
 and restart them, short-lived agents delegated to a context, effects
 that release resources when a service stops, an event bus, config
-validation and hot reload. Runs on SBCL and ECL.
+validation, live config updates and hot reload. Runs on SBCL and ECL.
 
 ## Docs
 
@@ -23,6 +23,7 @@ validation and hot reload. Runs on SBCL and ECL.
 - [Events](docs/events.md)
 - [Config](docs/config.md)
 - [Hot reload](docs/reload.md)
+- [Updating config](docs/update.md)
 
 ## License
 

@@ -35,6 +35,7 @@ Specialise any of these generic functions. Each has a no-op default.
 | `(dep-down s name reason)` | When dependency `name` leaves a ready service. |
 | `(handle s message)` | For each `call` or `cast`. The return value is the reply to a `call`. |
 | `(dispose s reason)` | When the service stops for any reason, before it is unregistered. |
+| `(update-config s old new)` | When its context [updates](update.md) its initargs. Return true to apply them in place. |
 
 `(effect s acquire)` ties a resource to the service's lifetime. See
 [effects](effects.md). `(on s event fn)` listens for

@@ -25,6 +25,7 @@ child.
 | `(unmount ctx child &key timeout)` | Stop `child`, a name or process, without restarting it, waiting `timeout` seconds (default its `shutdown`, or `:infinity`). See [stopping](#stopping). Returns `t`, `:killed`, `:timeout` if it is still running, or nil if `child` isn't mounted. |
 | `(children ctx)` | A plist `(:name :process :restart :state :restart-in)` for each child, in mount order. See [backoff](#backoff) for `:state`. |
 | `(reload ctx child &key timeout)` | Restart `child` with the same instance. See [hot reload](reload.md). |
+| `(update ctx child &rest initargs)` | Change `child`'s initargs and mount options while it runs. See [updating config](update.md). |
 
 Children use the context's registry and debug flag, and their
 `service-context` is the context. [Events](events.md#scope) can be scoped

@@ -510,3 +510,109 @@
       (join ctx)
       (is (eq :restart-limit (meow:process-exit-reason ctx))))
     (define-reloadable)))
+
+(meow:defservice tunable (reporting)
+  ((level :initarg :level :initform 1 :type integer :reader level)))
+
+(defmethod meow:ready ((s tunable))
+  (report s :ready (level s)))
+
+(defmethod meow:handle ((s tunable) message)
+  (if (eq message :update-self)
+      (handler-case (meow:update (meow:service-process (meow:service-context s))
+                                 (meow:service-name s) :level 9)
+        (error (e) e))
+      (level s)))
+
+(meow:defservice live-tunable (tunable) ())
+
+(defmethod meow:update-config ((s live-tunable) old new)
+  (report s :update (getf old :level) (getf new :level))
+  t)
+
+(test update-reloads-with-merged-initargs
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'tunable :reporter (meow:self) :level 1
+                                       :restart :permanent)))
+      (drain)
+      (let ((p2 (meow:update ctx 'tunable :level 2)))
+        (is (not (eq p p2)))
+        (is (eq :reload (meow:process-exit-reason p)))
+        (is (has '(tunable :ready 2) (drain)) "reporter is kept")
+        (is (= 2 (meow:call (meow:reload ctx p2) :level)) "reload keeps it")
+        (let ((p3 (meow:lookup 'tunable)))
+          (meow:stop p3 :killed)
+          (is (= 2 (meow:call (restarted ctx 'tunable p3) :level))
+              "restart keeps it")))
+      (is (null (meow:update ctx 'missing :level 3)))
+      (stop-and-join ctx))))
+
+(test update-config-applies-in-place
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'live-tunable :reporter (meow:self) :level 1)))
+      (drain)
+      (is (eq p (meow:update ctx 'live-tunable :level 2)))
+      (is (equal '((live-tunable :update 1 2)) (drain)))
+      (is (= 2 (meow:call p :level)))
+      (is (= 2 (meow:call (meow:reload ctx p) :level)))
+      (stop-and-join ctx))))
+
+(test update-rejects-invalid-config-in-caller
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'tunable :level 1)))
+      (signals meow:invalid-config (meow:update ctx 'tunable :level "high"))
+      (signals type-error (meow:update ctx 'tunable :shutdown -1))
+      (is (eq p (child-process ctx 'tunable)))
+      (is (meow:process-alive-p p))
+      (is (= 1 (meow:call (meow:reload ctx p) :level)) "nothing was stored")
+      (is (meow:process-alive-p ctx))
+      (stop-and-join ctx))))
+
+(test update-mount-options-keeps-process
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'tunable)))
+      (is (eq p (meow:update ctx p :restart :temporary)))
+      (is (equal (list (list 'tunable p :temporary)) (child-summary ctx)))
+      (stop-and-join ctx))))
+
+(test update-while-restarting-is-used-by-the-restart
+  (with-fresh-registry ()
+    (let* ((ctx (start-context :restart-delay 0.3))
+           (p (meow:mount ctx 'tunable :reporter (meow:self)
+                                       :restart :permanent)))
+      (drain)
+      (meow:stop p :killed)
+      (eventually (lambda ()
+                    (eq :restarting (getf (first (meow:children ctx)) :state))))
+      (meow:update ctx 'tunable :level 5)
+      (is (= 5 (meow:call (restarted ctx 'tunable p) :level)))
+      (stop-and-join ctx))))
+
+(meow:defservice broken-tunable (tunable) ())
+
+(defmethod meow:update-config ((s broken-tunable) old new)
+  (declare (ignore old new))
+  (error "can't apply"))
+
+(test update-config-error-signals-in-caller
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'broken-tunable :level 1)))
+      (signals simple-error (meow:update ctx 'broken-tunable :level 2))
+      (is (eq p (child-process ctx 'broken-tunable)))
+      (is (= 1 (meow:call p :level)))
+      (is (= 1 (meow:call (meow:reload ctx p) :level)) "nothing was stored")
+      (stop-and-join ctx))))
+
+(test update-from-the-child-itself-is-refused
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'tunable)))
+      (is (typep (meow:call p :update-self) 'error))
+      (is (eq p (child-process ctx 'tunable)))
+      (is (= 1 (meow:call p :level)))
+      (stop-and-join ctx))))
