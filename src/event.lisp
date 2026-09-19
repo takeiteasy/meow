@@ -107,21 +107,27 @@ them, and return their values in registration order."
         (calls '()))
     (unwind-protect
          (progn
-           (setf calls (mapcar (lambda (delivery)
-                                 (let ((process (listener-process
-                                                 (delivery-listener delivery))))
-                                   (unless (eq process (self))
-                                     (%start-call process delivery))))
-                               deliveries))
+           (setf calls (%begin-calls
+                        (mapcar (lambda (delivery)
+                                  (let ((process (listener-process
+                                                  (delivery-listener delivery))))
+                                    (unless (eq process (self))
+                                      process)))
+                                deliveries)))
+           (mapc (lambda (call delivery)
+                   (when (pending-call-p call)
+                     (%send-call call delivery)))
+                 calls deliveries)
            (let ((own (mapcar (lambda (delivery call)
                                 (unless call (%deliver delivery)))
                               deliveries calls)))
              (mapcar (lambda (call value)
-                       (if call
-                           (multiple-value-bind (value status)
-                               (%await-call call (and deadline
-                                                      (max 0 (- deadline (%now)))))
-                             (unless status value))
-                           value))
+                       (cond ((pending-call-p call)
+                              (multiple-value-bind (value status)
+                                  (%await-call call (and deadline
+                                                         (max 0 (- deadline (%now)))))
+                                (unless status value)))
+                             (call nil)
+                             (t value)))
                      calls own)))
-      (mapc #'%cancel-call (remove nil calls)))))
+      (%end-calls calls))))

@@ -59,8 +59,9 @@ listener is handled like an error in `handle` (see the
 `emit-serial` and `bail` wait up to `*event-timeout*` seconds for each
 listener (default nil, which waits forever); `emit-parallel` waits that long
 for all of them together. A listener that exits, skips the delivery or times
-out counts as returning nil. A timed-out listener still
-runs, but its result is discarded. A service that emits an event it
+out counts as returning nil. So does one whose process is already waiting
+on the emitter, a [deadlock](processes.md#deadlocks), and it isn't sent the
+event. A timed-out listener still runs, but its result is discarded. A service that emits an event it
 listens for itself runs its own listener directly.
 
 ## Lifetime
@@ -72,5 +73,4 @@ Deliveries that are already queued when it is removed are dropped.
 ## Rules
 
 `on` can only be called from the service's own process, for example in
-`ready` or `handle`. Two services that wait on each other's events
-at the same time deadlock, just as with `call`.
+`ready` or `handle`.

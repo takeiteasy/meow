@@ -37,6 +37,8 @@ application-specific code.
 - An [event](events.md) listener runs on its own service's process and is
   removed when that service stops. Events reach a whole registry or part of
   a context tree.
+- A `call` or waiting emit that would close a cycle of processes waiting
+  on each other [fails](processes.md#deadlocks) instead of deadlocking.
 - Processes stop cooperatively. A context interrupts a child's thread only
   to [kill](contexts.md#stopping) one that misses its shutdown, unless the
   child opts out with `:shutdown :infinity`.

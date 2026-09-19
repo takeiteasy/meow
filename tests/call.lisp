@@ -69,3 +69,50 @@
       (meow:send s message))
     (is (= 4 (meow:call s 2)))
     (stop-and-join s)))
+
+;;; Deadlock detection
+
+(defun relay-server ()
+  "Answer a route of processes by calling the first with the rest, returning
+that call's status, or its reply if it has none. An empty route is :done."
+  (meow:serve (lambda (route)
+                (if route
+                    (multiple-value-bind (reply status)
+                        (meow:call (first route) (rest route) :timeout 2)
+                      (or status reply))
+                    :done))))
+
+(test call-to-self-is-a-deadlock
+  (meow:with-process (p)
+    (is (equal (list nil (list :deadlock (list p)))
+               (multiple-value-list (meow:call p :ping))))
+    (is (null (meow:receive :timeout 0)) "nothing is sent")))
+
+(test call-cycles-are-refused
+  (let ((a (relay-server))
+        (b (relay-server))
+        (c (relay-server))
+        (start (now)))
+    (is (eq :done (meow:call a (list b c))))
+    (is (equal (list :deadlock (list a b)) (meow:call a (list b a))))
+    (is (equal (list :deadlock (list a b c)) (meow:call a (list b c a))))
+    (is (< (- (now) start) 1))
+    (mapc #'stop-and-join (list a b c))))
+
+(test answered-caller-can-call-back
+  (let* ((b nil)
+         (results '())
+         (a (meow:serve (lambda (message)
+                          (case message
+                            (:ping (meow:cast (meow:self) :call-back) :pong)
+                            (:call-back (push (meow:call b :hello) results))))))
+         (b-process (meow:serve (lambda (message)
+                                  (case message
+                                    (:go (meow:call a :ping))
+                                    (:hello :hi))))))
+    (setf b b-process)
+    (loop repeat 200 do (meow:call b :go))
+    (meow:call a :sync)
+    (is (equal (make-list 200 :initial-element :hi) results))
+    (stop-and-join a)
+    (stop-and-join b)))

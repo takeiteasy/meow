@@ -19,48 +19,111 @@
   "Answer the CALL that sent CELL."
   (%settle cell :value value))
 
-(defstruct (pending-call (:constructor %make-pending-call (process cell hook)))
-  process cell hook)
+(defstruct (pending-call (:constructor %make-pending-call (process)))
+  process (cell (%make-reply-cell)) hook)
 
-(defun %start-call (process message)
-  "Send MESSAGE to PROCESS as (:call cell message) without waiting. If PROCESS
-has already exited, nothing is sent and the cell is settled as :down."
-  (let* ((cell (%make-reply-cell))
+(defun %send-call (pending message)
+  "Send MESSAGE to PENDING's process as (:call cell message) without waiting.
+If it has already exited, nothing is sent and the cell is settled as :down."
+  (let* ((process (pending-call-process pending))
+         (cell (pending-call-cell pending))
          (hook (add-exit-hook process (lambda (process reason)
                                         (declare (ignore process))
                                         (%settle cell :down reason)))))
+    (setf (pending-call-hook pending) hook)
     (if hook
         (send process (list :call cell message))
         (%settle cell :down (process-exit-reason process)))
-    (%make-pending-call process cell hook)))
+    pending))
 
 (defun %cancel-call (pending)
   (a:when-let ((hook (pending-call-hook pending)))
     (remove-exit-hook (pending-call-process pending) hook)))
 
+;;; TODO: one global lock and a graph walk per waiting call; keep per-process
+;;; wait links if call rates matter.
+(defvar *%wait-lock* (bt2:make-lock :name "wait graph"))
+
+(defvar *%waits* (make-hash-table :test 'eq)
+  "Each waiting process's pending calls.")
+
+(defun %pending-p (pending)
+  (let ((cell (pending-call-cell pending)))
+    (bt2:with-lock-held ((reply-cell-lock cell))
+      (eq (reply-cell-state cell) :pending))))
+
+(defun %wait-path (from to)
+  "The processes from FROM to TO along unanswered calls, or nil. Call with
+the wait lock held."
+  (let ((seen '()))
+    (labels ((walk (process)
+               (cond ((eq process to) (list process))
+                     ((not (member process seen))
+                      (push process seen)
+                      (loop for pending in (gethash process *%waits*)
+                            for path = (and (%pending-p pending)
+                                            (walk (pending-call-process pending)))
+                            when path
+                              return (cons process path))))))
+      (walk from))))
+
+(defun %begin-calls (processes)
+  "A pending call from the current process to each of PROCESSES, recorded as
+what it waits on. A process that would close a wait cycle gets the cycle's
+processes instead, and nil stays nil."
+  (let ((self (self)))
+    (bt2:with-lock-held (*%wait-lock*)
+      (let ((calls (mapcar (lambda (process)
+                             (when process
+                               (or (and self (%wait-path process self))
+                                   (%make-pending-call process))))
+                           processes)))
+        (when self
+          (a:when-let ((pending (remove-if-not #'pending-call-p calls)))
+            (setf (gethash self *%waits*)
+                  (append pending (gethash self *%waits*)))))
+        calls))))
+
+(defun %end-calls (calls)
+  "Cancel CALLS from %BEGIN-CALLS and stop waiting on them."
+  (let ((pending (remove-if-not #'pending-call-p calls))
+        (self (self)))
+    (mapc #'%cancel-call pending)
+    (when self
+      (bt2:with-lock-held (*%wait-lock*)
+        (a:if-let ((left (set-difference (gethash self *%waits*) pending)))
+          (setf (gethash self *%waits*) left)
+          (remhash self *%waits*))))))
+
 (defun %await-call (pending timeout)
   "Wait up to TIMEOUT seconds for PENDING's reply, with CALL's return values."
   (let ((cell (pending-call-cell pending)))
-    (unwind-protect
-         (progn
-           (bt2:with-lock-held ((reply-cell-lock cell))
-             (%wait-until (reply-cell-lock cell) (reply-cell-cv cell)
-                          (lambda () (not (eq (reply-cell-state cell) :pending)))
-                          timeout))
-           (ecase (reply-cell-state cell)
-             (:value (values (reply-cell-value cell) nil))
-             (:down (values nil (list :down (reply-cell-value cell))))
-             (:error (values nil (list :error (reply-cell-value cell))))
-             (:pending (values nil :timeout))))
-      (%cancel-call pending))))
+    (bt2:with-lock-held ((reply-cell-lock cell))
+      (%wait-until (reply-cell-lock cell) (reply-cell-cv cell)
+                   (lambda () (not (eq (reply-cell-state cell) :pending)))
+                   timeout))
+    (ecase (reply-cell-state cell)
+      (:value (values (reply-cell-value cell) nil))
+      (:down (values nil (list :down (reply-cell-value cell))))
+      (:error (values nil (list :error (reply-cell-value cell))))
+      (:pending (values nil :timeout)))))
 
 (defun call (process message &key (timeout 5))
   "Send MESSAGE to PROCESS as (:call cell message) and wait for the reply.
 Returns (values reply nil), (values nil :timeout) after TIMEOUT seconds (nil
 waits forever), (values nil (:down reason)) if PROCESS exits first, or
 (values nil (:error condition)) if a service skipped the message. On timeout
-PROCESS keeps running and its eventual reply is discarded."
-  (%await-call (%start-call process message) timeout))
+PROCESS keeps running and its eventual reply is discarded. If PROCESS is
+already waiting, directly or through others, on the caller, nothing is sent
+and it returns (values nil (:deadlock processes)), the cycle from PROCESS to
+the caller."
+  (let ((calls '()))
+    (unwind-protect
+         (let ((pending (first (setf calls (%begin-calls (list process))))))
+           (if (pending-call-p pending)
+               (%await-call (%send-call pending message) timeout)
+               (values nil (list :deadlock pending))))
+      (%end-calls calls))))
 
 (defun cast (process message)
   "Send MESSAGE to PROCESS as (:cast message) without waiting."

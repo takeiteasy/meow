@@ -34,6 +34,9 @@ signals an error; otherwise it is the listener's value."
       (:emit-in-context
        (let ((meow:*event-scope* (first args)))
          (apply #'meow:emit-parallel (meow:service-context s) (rest args))))
+      (:relay (destructuring-bind (event emitter) args
+                (meow:on s event (lambda () (funcall emitter s))))
+       :ok)
       (:bail (apply #'meow:bail s args)))))
 
 (defun start-listener (name &rest on-args)
@@ -256,3 +259,34 @@ other{ :d } and an unmounted :top, each listening for :ping."
     (is (equal '(:a :b :c) (emit-from :b :both)))
     (signals error (let ((meow:*event-scope* :sideways))
                      (meow:emit-parallel app :ping)))))
+
+;;; Deadlock detection
+
+(test mutual-emit-parallel-is-refused
+  (with-fresh-registry ()
+    (let ((x (start-listener :x :e2 :result :x))
+          (y (start 'listening :name :y))
+          (start (now)))
+      (meow:call y (list :relay :e1 (lambda (s) (meow:emit-parallel s :e2))))
+      (is (equal '((nil)) (meow:call x '(:emit-parallel :e1))))
+      (is (< (- (now) start) 1))
+      (is (null (drain)) "x's listener is not sent the event")
+      (stop-and-join x)
+      (stop-and-join y))))
+
+(test cycle-through-a-context-tree-is-refused
+  (with-fresh-registry ()
+    (let* ((app (meow:start-service (make-instance 'meow:context :name :app)))
+           (x (meow:mount app 'listening :name :x :reporter (meow:self)))
+           (inner (meow:mount app 'meow:context :name :inner))
+           (y (meow:mount inner 'listening :name :y))
+           (start (now)))
+      (meow:call x '(:on :e2 :result :x))
+      (meow:call y (list :relay :e1
+                         (lambda (s)
+                           (let ((meow:*event-scope* :up))
+                             (meow:emit-serial s :e2)))))
+      (is (null (meow:call x '(:bail :e1))))
+      (is (< (- (now) start) 1))
+      (is (null (drain)))
+      (stop-and-join app))))

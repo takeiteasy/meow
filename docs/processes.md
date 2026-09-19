@@ -66,6 +66,16 @@ process's thread.
 | `(values nil :timeout)` | No answer in time. `p` keeps running and its late reply is discarded. |
 | `(values nil (:down reason))` | `p` exited before answering, or had already exited. |
 | `(values nil (:error condition))` | A [service](services.md#failure-model) skipped the message after an error. |
+| `(values nil (:deadlock processes))` | `p` is already waiting on the caller, directly or through others. Nothing was sent. |
+
+## Deadlocks
+
+Each process waiting in `call` or a waiting [emit](events.md) is recorded
+as waiting on its targets. A call that would close a cycle, such as two
+services calling each other, or a process calling itself, fails at once
+with `(:deadlock processes)`. `processes` lists the cycle from `p` to the
+caller. The other calls in the cycle keep waiting and are answered once
+the refused caller moves on.
 
 Wire format for processes that run their own `receive` loop:
 `(:call cell msg)`, answered with `(reply cell value)`; `(:cast msg)`; and
