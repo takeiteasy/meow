@@ -56,6 +56,8 @@ the service stops. START-SERVICE captures the value.")
   (:method-combination append :most-specific-last)
   (:method append ((service service)) '()))
 
+;;; TODO: class slots are walked on every make-instance; cache per class if
+;;; mount rates matter.
 (defun %type-problems (service)
   (loop for slot in (c2mop:class-slots (class-of service))
         for name = (c2mop:slot-definition-name slot)

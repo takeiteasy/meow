@@ -37,7 +37,8 @@ A restart makes a fresh instance from `class` and `initargs`.
 | `:transient` (default) | anything except `:normal` or `:shutdown` |
 | `:temporary` | never |
 
-A child that exits and isn't restarted is removed from `children`.
+A child that exits and isn't restarted is removed from `children`. The
+exit of a [reloaded](reload.md) child's old process is ignored.
 
 ## Intensity
 
