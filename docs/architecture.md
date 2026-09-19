@@ -37,7 +37,8 @@ application-specific code.
 - An [event](events.md) listener runs on its own service's process and is
   removed when that service stops. Events reach a whole registry or part of
   a context tree.
-- Threads are never killed. Processes stop cooperatively.
+- Processes stop cooperatively. A context interrupts a child's thread only
+  to [kill](contexts.md#stopping) one that misses its shutdown.
 
 ## Implementations
 
