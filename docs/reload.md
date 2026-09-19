@@ -10,7 +10,7 @@ so it picks up recompiled code while keeping its state.
 
 `(reload ctx child &key timeout)` takes a name or a process. It returns
 the new process, or nil if `child` isn't mounted. `timeout` defaults to the
-child's `shutdown`.
+child's `shutdown`; `:infinity` waits without killing.
 
 ## Steps
 

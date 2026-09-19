@@ -2,6 +2,8 @@
 
 (deftype %restart-type () '(member :permanent :transient :temporary))
 
+(deftype %shutdown-type () '(or (real 0) (eql :infinity)))
+
 (defun %spec-problems (context)
   (loop for spec in (slot-value context 'specs)
         for problem = (cond ((not (and (consp spec) (symbolp (first spec))
@@ -12,7 +14,7 @@
                                          '%restart-type))
                              "has an invalid :restart")
                             ((not (typep (getf (rest spec) :shutdown 5)
-                                         '(real 0)))
+                                         '%shutdown-type))
                              "has an invalid :shutdown")
                             ((not (typep (getf (rest spec) :backoff)
                                          '(or null (real 0))))
@@ -66,7 +68,8 @@ nil for its whole registry.")
               &key restart shutdown backoff backoff-max &allow-other-keys)
   "Start a service of CLASS with INITARGS under CONTEXT and return its
 process. RESTART is :permanent, :transient (default) or :temporary. SHUTDOWN
-is how many seconds it gets to stop (default 5) before it is killed.
+is how many seconds it gets to stop (default 5) before it is killed, or
+:infinity to wait for it without killing it.
 BACKOFF and BACKOFF-MAX override the context's :restart-delay and
 :restart-delay-max."
   (declare (ignore restart shutdown backoff backoff-max))
@@ -78,8 +81,8 @@ BACKOFF and BACKOFF-MAX override the context's :restart-delay and
 
 (defun unmount (context child &key timeout)
   "Stop CHILD of CONTEXT, a name or process, without restarting it, waiting
-up to TIMEOUT seconds (default its shutdown) for it to exit before killing
-it. Returns t, :killed, :timeout if it is still running after being killed,
+up to TIMEOUT seconds (default its shutdown, :infinity for no limit) for
+it to exit before killing it. Returns t, :killed, :timeout if it is still running after being killed,
 or nil if CHILD is not mounted."
   (%context-call context (list '%unmount child timeout)))
 
@@ -93,7 +96,8 @@ delay, with RESTART-IN the seconds left, and :running otherwise."
   "Stop CHILD of CONTEXT, a name or process, with reason :reload, then
 reinitialize its instance with the initargs it was mounted with and start it
 again. Returns the new process, or nil if CHILD is not mounted. If it fails
-to stop within TIMEOUT seconds (default its shutdown), which signals
+to stop within TIMEOUT seconds (default its shutdown, :infinity for no
+limit), which signals
 STOP-TIMEOUT, or to start, it is removed and the error is signalled."
   (a:when-let ((result (%context-call context (list '%reload child timeout))))
     (destructuring-bind (status value) result
@@ -103,8 +107,8 @@ STOP-TIMEOUT, or to start, it is removed and the error is signalled."
 
 (defun %stop-and-wait (process timeout &optional (reason :shutdown))
   "Stop PROCESS and wait up to TIMEOUT seconds for its exit hooks to run,
-then kill it and wait as long again. Returns t, :killed, or nil if it is
-still running."
+then kill it and wait as long again. A TIMEOUT of :infinity waits without
+killing. Returns t, :killed, or nil if it is still running."
   ;; Hooks run in the order added, so this one fires after dispose and
   ;; unregistration.
   (let ((done (bt2:make-semaphore :name "exit")))
@@ -113,7 +117,8 @@ still running."
                                  (bt2:signal-semaphore done)))
         (progn
           (stop process reason)
-          (cond ((bt2:wait-on-semaphore done :timeout timeout) t)
+          (cond ((eq timeout :infinity) (bt2:wait-on-semaphore done) t)
+                ((bt2:wait-on-semaphore done :timeout timeout) t)
                 ;; The interrupt can leave shared state inconsistent, and
                 ;; can't reach a process already in its exit hooks.
                 (t (%kill process)
@@ -152,7 +157,7 @@ still running."
                          backoff backoff-max &allow-other-keys)
       args
     (check-type restart %restart-type)
-    (check-type shutdown (real 0))
+    (check-type shutdown %shutdown-type)
     (check-type backoff (or null (real 0)))
     (check-type backoff-max (or null (real 0)))
     (let* ((child (make-child class

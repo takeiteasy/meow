@@ -38,7 +38,8 @@ application-specific code.
   removed when that service stops. Events reach a whole registry or part of
   a context tree.
 - Processes stop cooperatively. A context interrupts a child's thread only
-  to [kill](contexts.md#stopping) one that misses its shutdown.
+  to [kill](contexts.md#stopping) one that misses its shutdown, unless the
+  child opts out with `:shutdown :infinity`.
 
 ## Implementations
 

@@ -253,6 +253,7 @@
 (test invalid-child-specs-signal-invalid-config
   (dolist (children '(provider ((provider :restart)) ((provider :restart :sometimes))
                       (("provider")) ((provider :shutdown -1))
+                      ((provider :shutdown :forever))
                       ((provider :backoff -1))
                       ((provider :backoff-max :soon))))
     (signals meow:invalid-config
@@ -352,6 +353,34 @@
         (stop-and-join ctx)
         (is (equal (list (list 'meow:stop-timeout ctx)) reports))
         (join p)))))
+
+(test unmount-waits-for-an-infinite-shutdown
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'provider :shutdown :infinity))
+           (start (now)))
+      (meow:cast p '(:sleep 0.3))
+      (is (eq t (meow:unmount ctx 'provider)))
+      (is (<= 0.3 (- (now) start)))
+      (is (eq :shutdown (meow:process-exit-reason p)))
+      (stop-and-join ctx))))
+
+(test unmount-timeout-still-kills-an-infinite-shutdown
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (stuck-child ctx :shutdown :infinity)))
+      (is (eq :killed (meow:unmount ctx 'provider :timeout 0.05)))
+      (is (eq :killed (meow:process-exit-reason p)))
+      (stop-and-join ctx))))
+
+(test teardown-waits-for-an-infinite-shutdown
+  (with-fresh-registry ()
+    (with-teardown-reports (reports)
+      (let* ((ctx (start-context))
+             (p (stuck-child ctx :shutdown :infinity)))
+        (stop-and-join ctx)
+        (is (null reports))
+        (is (eq :shutdown (meow:process-exit-reason p)))))))
 
 (test stuck-declared-child-does-not-block-context-restart
   (with-fresh-registry ()

@@ -21,8 +21,8 @@ child.
 
 | Call | Purpose |
 |---|---|
-| `(mount ctx class &rest initargs &key restart shutdown backoff backoff-max)` | Start a service of `class` and return its process. `shutdown` is how many seconds it gets to stop (default 5). `backoff` and `backoff-max` override the context's [restart delay](#backoff). Start errors, such as `already-registered`, are signalled in the caller. |
-| `(unmount ctx child &key timeout)` | Stop `child`, a name or process, without restarting it. See [stopping](#stopping). Returns `t`, `:killed`, `:timeout` if it is still running, or nil if `child` isn't mounted. |
+| `(mount ctx class &rest initargs &key restart shutdown backoff backoff-max)` | Start a service of `class` and return its process. `shutdown` is how many seconds it gets to stop (default 5), or `:infinity`. See [stopping](#stopping). `backoff` and `backoff-max` override the context's [restart delay](#backoff). Start errors, such as `already-registered`, are signalled in the caller. |
+| `(unmount ctx child &key timeout)` | Stop `child`, a name or process, without restarting it, waiting `timeout` seconds (default its `shutdown`, or `:infinity`). See [stopping](#stopping). Returns `t`, `:killed`, `:timeout` if it is still running, or nil if `child` isn't mounted. |
 | `(children ctx)` | A plist `(:name :process :restart :state :restart-in)` for each child, in mount order. See [backoff](#backoff) for `:state`. |
 | `(reload ctx child &key timeout)` | Restart `child` with the same instance. See [hot reload](reload.md). |
 
@@ -104,6 +104,14 @@ killed: its thread is interrupted to exit with `:killed`, which still
 unwinds its effects, runs `dispose` and unregisters it. `unmount` returns
 `:killed` in that case. The interrupt can land anywhere, so state the
 child shared with other threads may be left inconsistent.
+
+A child mounted with `:shutdown :infinity` is never killed: its context
+waits for it as long as it takes. An explicit `unmount` or `reload`
+`:timeout` still kills it once that passes. While the context waits, it
+handles no other messages. A child that never stops blocks its
+context's shutdown for good, and a parent context can't kill a context
+that is already stopping, so after its own `shutdown` the parent reports
+a `stop-timeout` and leaves both running unsupervised.
 
 The kill can't reach a child that is already exiting, such as one stuck
 in `dispose`. If it is still running `shutdown` seconds after the kill,
