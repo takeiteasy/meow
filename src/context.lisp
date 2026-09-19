@@ -84,7 +84,9 @@ or nil if CHILD is not mounted."
   (%context-call context (list '%unmount child timeout)))
 
 (defun children (context)
-  "A list of (name process restart) for each child, in mount order."
+  "A plist (:name :process :restart :state :restart-in) for each child, in
+mount order. STATE is :restarting while the child waits out its restart
+delay, with RESTART-IN the seconds left, and :running otherwise."
   (%context-call context (list '%children)))
 
 (defun reload (context child &key timeout)
@@ -234,7 +236,7 @@ delay, doubled for each earlier restart within period up to the max if set."
 (defun %schedule-start (child delay)
   "Cast %DELAYED-START for CHILD to the current process after DELAY seconds."
   (let ((self (self))
-        (token (setf (child-pending child) (list child))))
+        (token (setf (child-pending child) (list (+ (%now) delay)))))
     (bt2:make-thread (lambda ()
                        (sleep delay)
                        (cast self (list '%delayed-start child token)))
@@ -269,6 +271,14 @@ delay, doubled for each earlier restart within period up to the max if set."
           (%restart-child context child)
           (a:deletef children child)))))
 
+(defun %child-info (child)
+  (let ((pending (child-pending child)))
+    (list :name (child-name child)
+          :process (child-process child)
+          :restart (child-restart child)
+          :state (if pending :restarting :running)
+          :restart-in (and pending (max 0 (- (first pending) (%now)))))))
+
 (defmethod handle ((context context) message)
   (multiple-value-bind (tag a b c)
       (when (a:proper-list-p message)
@@ -276,10 +286,7 @@ delay, doubled for each earlier restart within period up to the max if set."
     (case tag
       (%mount (%mount context a b))
       (%unmount (%unmount context a b))
-      (%children (mapcar (lambda (child)
-                           (list (child-name child) (child-process child)
-                                 (child-restart child)))
-                         (slot-value context 'children)))
+      (%children (mapcar #'%child-info (slot-value context 'children)))
       (%reload (%reload context a b))
       (%child-exit (%child-exit context a b c))
       (%delayed-start (%delayed-start context a b))

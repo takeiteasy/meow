@@ -9,8 +9,14 @@
 (defun start-context (&rest initargs)
   (meow:start-service (apply #'make-instance 'meow:context :name :ctx initargs)))
 
+(defun child-summary (context)
+  "(name process restart) for each child of CONTEXT."
+  (mapcar (lambda (child)
+            (list (getf child :name) (getf child :process) (getf child :restart)))
+          (meow:children context)))
+
 (defun child-process (context name)
-  (second (assoc name (meow:children context) :test #'equal)))
+  (second (assoc name (child-summary context) :test #'equal)))
 
 (defun eventually (function &optional (timeout 2))
   "Poll FUNCTION until it returns true or TIMEOUT seconds pass."
@@ -67,7 +73,7 @@
         do (with-fresh-registry ()
              (let* ((ctx (start-context))
                     (p (meow:mount ctx 'provider :restart restart)))
-               (is (equal (list (list 'provider p restart)) (meow:children ctx)))
+               (is (equal (list (list 'provider p restart)) (child-summary ctx)))
                (meow:stop p reason)
                (if restarts-p
                    (is-true (restarted ctx 'provider p) "~s ~s" restart reason)
@@ -100,7 +106,7 @@
       (let ((inner2 (restarted root :inner inner)))
         (is-true inner2)
         (is (eq :restart-limit (meow:process-exit-reason inner)))
-        (is (equal '(provider) (mapcar #'first (meow:children inner2)))
+        (is (equal '(provider) (mapcar #'first (child-summary inner2)))
             "declared children are rebuilt, mounted ones are not")
         (is (meow:process-alive-p (meow:lookup 'provider))))
       (stop-and-join root))))
@@ -111,7 +117,7 @@
            (p (meow:mount ctx 'provider)))
       (signals meow:already-registered (meow:mount ctx 'provider))
       (signals type-error (meow:mount ctx 'provider :restart :sometimes))
-      (is (equal (list (list 'provider p :transient)) (meow:children ctx)))
+      (is (equal (list (list 'provider p :transient)) (child-summary ctx)))
       (stop-and-join ctx))))
 
 (test stopping-context-stops-children-in-reverse-order
@@ -167,7 +173,7 @@
                    messages)
             "effects unwind, dispose, then ready with state kept")
         (is (eq p2 (meow:lookup 'counter)) "name survives reload")
-        (is (equal (list (list 'counter p2 :permanent)) (meow:children ctx))
+        (is (equal (list (list 'counter p2 :permanent)) (child-summary ctx))
             "the old exit is not treated as a crash")
         (is (meow:process-alive-p (meow:reload ctx p2)) "reload by process")
         (is (null (meow:reload ctx 'missing))))
@@ -223,7 +229,7 @@
       (let* ((p (child-process inner 'provider))
              (inner2 (meow:reload root :inner))
              (p2 (child-process inner2 'provider)))
-        (is (equal '(provider) (mapcar #'first (meow:children inner2))))
+        (is (equal '(provider) (mapcar #'first (child-summary inner2))))
         (is (not (eq p p2)))
         (is (eq p2 (meow:lookup 'provider)))
         (is (null (meow:lookup 'consumer))))
@@ -239,7 +245,7 @@
     (let ((ctx (meow:start-service (make-instance 'plugins))))
       (is (equal '((provider :permanent) (consumer :transient))
                  (mapcar (lambda (child) (list (first child) (third child)))
-                         (meow:children ctx))))
+                         (child-summary ctx))))
       (is (eq (child-process ctx 'provider) (meow:lookup 'provider)))
       (stop-and-join ctx)
       (is (null (meow:names))))))
@@ -405,6 +411,26 @@
                  (restart-times ctx 'provider 2)))
       (is (every (lambda (time) (<= 0.1 time 0.9))
                  (restart-times ctx 'consumer 2)))
+      (stop-and-join ctx))))
+
+(test children-shows-a-pending-restart
+  (with-fresh-registry ()
+    (let* ((ctx (start-context :restart-delay 0.3))
+           (p (meow:mount ctx 'provider :restart :permanent)))
+      (is (equal (list :name 'provider :process p :restart :permanent
+                       :state :running :restart-in nil)
+                 (first (meow:children ctx))))
+      (meow:stop p :killed)
+      (let ((child (eventually (lambda ()
+                                 (let ((child (first (meow:children ctx))))
+                                   (and (eq :restarting (getf child :state))
+                                        child))))))
+        (is (eq p (getf child :process)))
+        (is (< 0 (getf child :restart-in) 0.3001)))
+      (let ((p2 (restarted ctx 'provider p)))
+        (is (equal (list :state :running :restart-in nil)
+                   (last (first (meow:children ctx)) 4)))
+        (is-true p2))
       (stop-and-join ctx))))
 
 (test unmount-cancels-a-pending-restart

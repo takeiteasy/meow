@@ -9,7 +9,10 @@ child.
 (defvar *app* (start-service (make-instance 'context :name :app)))
 (mount *app* 'provider :restart :permanent)
 (mount *app* 'consumer :reporter *reporter*)
-(children *app*)   ; => ((provider #<process> :permanent) (consumer #<process> :transient))
+(children *app*)
+; => ((:name provider :process #<process> :restart :permanent
+;     :state :running :restart-in nil)
+;     (:name consumer ...))
 (unmount *app* 'consumer)
 (stop *app*)
 ```
@@ -20,7 +23,7 @@ child.
 |---|---|
 | `(mount ctx class &rest initargs &key restart shutdown backoff backoff-max)` | Start a service of `class` and return its process. `shutdown` is how many seconds it gets to stop (default 5). `backoff` and `backoff-max` override the context's [restart delay](#backoff). Start errors, such as `already-registered`, are signalled in the caller. |
 | `(unmount ctx child &key timeout)` | Stop `child`, a name or process, without restarting it. See [stopping](#stopping). Returns `t`, `:killed`, `:timeout` if it is still running, or nil if `child` isn't mounted. |
-| `(children ctx)` | `(name process restart)` for each child, in mount order. |
+| `(children ctx)` | A plist `(:name :process :restart :state :restart-in)` for each child, in mount order. See [backoff](#backoff) for `:state`. |
 | `(reload ctx child &key timeout)` | Restart `child` with the same instance. See [hot reload](reload.md). |
 
 Children use the context's registry and debug flag, and their
@@ -74,9 +77,12 @@ child's `:backoff` and `:backoff-max` override both.
 (mount *app* 'flaky :restart :permanent :backoff 1)
 ```
 
-The context keeps handling messages while it waits. `children` lists the
-exited process until the restart, and a child unmounted or reloaded in
-the meantime isn't restarted.
+The context keeps handling messages while it waits. Meanwhile `children`
+lists the exited process with `:state :restarting` and `:restart-in` set
+to the seconds left. Otherwise `:state` is `:running` and `:restart-in` is
+nil; use `process-alive-p` to check liveness, since an exit may not have
+been handled yet. A child unmounted or reloaded in the meantime isn't
+restarted.
 
 ## Intensity
 

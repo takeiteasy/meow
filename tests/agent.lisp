@@ -24,7 +24,7 @@
            (a (meow:delegate ctx 'echo-agent)))
       (is (eq :hi (meow:call a '(:echo :hi))))
       (is (equal '(:ctx) (meow:names)))
-      (is (equal (list (list nil a :temporary)) (meow:children ctx)))
+      (is (equal (list (list nil a :temporary)) (child-summary ctx)))
       (stop-and-join ctx))))
 
 (test done-by-cast-notifies-parent-and-stops
@@ -78,7 +78,7 @@
   (with-fresh-registry ()
     (let ((ctx (start-context)))
       (meow:delegate ctx 'silent-agent :ref :r1)
-      (is (null (meow:call (second (first (meow:children ctx))) :hello)))
+      (is (null (meow:call (second (first (child-summary ctx))) :hello)))
       (stop-and-join ctx)
       (is (equal (list (list :agent-down :r1 :shutdown)) (drain))))))
 
