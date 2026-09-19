@@ -242,7 +242,7 @@
       (is (null (meow:names))))))
 
 (test invalid-child-specs-signal-invalid-config
-  (dolist (children '(provider (provider :restart) ((provider :restart :sometimes))
+  (dolist (children '(provider ((provider :restart)) ((provider :restart :sometimes))
                       (("provider")) ((provider :shutdown -1))))
     (signals meow:invalid-config
       (make-instance 'meow:context :children children))))

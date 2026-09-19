@@ -78,7 +78,8 @@ running unsupervised and stays registered until it exits. The context
 reports it as a `stop-timeout` condition (with `stop-timeout-process` and
 `stop-timeout-seconds`) through `*teardown-error-hook*`, or prints a
 warning. `unmount` returns `:timeout` and `reload` signals `stop-timeout`
-in the same case.
+in the same case. A declared child that is still registered blocks its
+context's restart, which then escalates to `:restart-limit`.
 
 ## Nesting
 
