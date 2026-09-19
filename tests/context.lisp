@@ -434,3 +434,14 @@
         (is-true p2)
         (is (eq p2 (meow:lookup 'provider))))
       (stop-and-join ctx))))
+
+(test failed-restarts-without-delay-reach-the-limit
+  (with-fresh-registry ()
+    (define-reloadable)
+    (let* ((ctx (start-context :intensity 50))
+           (p (meow:mount ctx 'reloadable :restart :permanent)))
+      (define-reloadable :rejected)
+      (meow:stop p :killed)
+      (join ctx)
+      (is (eq :restart-limit (meow:process-exit-reason ctx))))
+    (define-reloadable)))

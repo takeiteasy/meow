@@ -26,7 +26,8 @@ A child that misses `timeout` is [killed](contexts.md#stopping) and the
 reload goes ahead. If it still hasn't stopped `timeout` seconds after the
 kill, or fails to start, it is removed from the context and the error is
 signalled in the caller. A missed kill signals `stop-timeout`, and the old
-process keeps running until it exits.
+process keeps running until it exits. A killed child exits with `:killed`
+rather than `:reload`, and its dependants see that reason in `dep-down`.
 
 ## What survives
 

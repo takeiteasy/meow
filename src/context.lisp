@@ -223,28 +223,34 @@ delay, doubled for each earlier restart within period up to the max if set."
 
 ;;; TODO: one sleeping thread per pending restart, which outlives a stopped
 ;;; context; use a shared timer if restart counts grow.
-(defun %restart-child (context child)
-  "Restart CHILD after its backoff delay, without blocking CONTEXT."
-  (%note-restart context)
-  (let ((delay (%restart-delay context child)))
-    (if (zerop delay)
-        (%try-start context child)
-        (let ((self (self))
-              (token (setf (child-pending child) (list child))))
-          (bt2:make-thread (lambda ()
-                             (sleep delay)
-                             (cast self (list '%delayed-start child token)))
-                           :name "meow restart delay")))))
+(defun %schedule-start (child delay)
+  "Cast %DELAYED-START for CHILD to the current process after DELAY seconds."
+  (let ((self (self))
+        (token (setf (child-pending child) (list child))))
+    (bt2:make-thread (lambda ()
+                       (sleep delay)
+                       (cast self (list '%delayed-start child token)))
+                     :name "meow restart delay")))
 
 (defun %try-start (context child)
   (handler-case (%start-child context child)
-    (error () (%restart-child context child))))
+    (error () nil)))
+
+(defun %restart-child (context child)
+  "Restart CHILD after its backoff delay, without blocking CONTEXT."
+  (loop (%note-restart context)
+        (let ((delay (%restart-delay context child)))
+          (unless (zerop delay)
+            (return (%schedule-start child delay)))
+          (when (%try-start context child)
+            (return)))))
 
 (defun %delayed-start (context child token)
   "Start CHILD unless it was removed or started since TOKEN was scheduled."
   (when (and (member child (slot-value context 'children))
              (eq token (child-pending child)))
-    (%try-start context child)))
+    (unless (%try-start context child)
+      (%restart-child context child))))
 
 (defun %child-exit (context child process reason)
   "Handle an exit of CHILD, ignoring one from a process it has replaced."
