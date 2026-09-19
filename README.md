@@ -7,8 +7,8 @@ development. So far it provides processes (a thread plus a mailbox) with
 call/cast, a name registry with subscribe and await, CLOS services that
 wait for their dependencies in any mount order, contexts that supervise
 and restart them, short-lived agents delegated to a context, effects
-that release resources when a service stops, and an event bus. Hot reload
-is planned. Runs on SBCL and ECL.
+that release resources when a service stops, an event bus, config
+validation and hot reload. Runs on SBCL and ECL.
 
 ## Docs
 
@@ -21,6 +21,8 @@ is planned. Runs on SBCL and ECL.
 - [Effects](docs/effects.md)
 - [Delegation](docs/delegation.md)
 - [Events](docs/events.md)
+- [Config](docs/config.md)
+- [Hot reload](docs/reload.md)
 
 ## License
 

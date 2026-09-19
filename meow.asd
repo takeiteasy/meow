@@ -3,7 +3,7 @@
   :author "George Watson"
   :license "GPLv3"
   :version "0.1.0"
-  :depends-on ("bordeaux-threads" "alexandria")
+  :depends-on ("bordeaux-threads" "alexandria" "closer-mop")
   :pathname "src/"
   :serial t
   :components ((:file "package")

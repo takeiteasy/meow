@@ -231,3 +231,60 @@
         (is (null value))
         (is (eq :down (first status))))
       (join p))))
+
+(defun port-problems (service)
+  (when (< (port service) 1024)
+    (list "port must be at least 1024")))
+
+(meow:defservice configured ()
+  ((host :initarg :host :initform "localhost" :type string)
+   (port :initarg :port :initform 8080 :type integer :reader port))
+  (:validate port-problems))
+
+(meow:defservice configured-child (configured)
+  ((retries :initarg :retries :initform 0 :type (integer 0)))
+  (:validate (lambda (s)
+               (declare (ignore s))
+               (list "child checked"))))
+
+(defun config-problems (class &rest initargs)
+  (handler-case (progn (apply #'make-instance class initargs) nil)
+    (meow:invalid-config (c) (meow:invalid-config-problems c))))
+
+(test valid-config-constructs
+  (is (null (config-problems 'configured :port 2000))))
+
+(test type-problems-list-every-slot
+  (is (equal '("host: 1 is not of type STRING"
+               "port: \"80\" is not of type INTEGER")
+             (config-problems 'configured :host 1 :port "80"))))
+
+(test validate-runs-once-types-pass
+  (is (equal '("port must be at least 1024")
+             (config-problems 'configured :port 80))))
+
+(test validators-are-inherited-superclass-first
+  (is (equal '("port must be at least 1024" "child checked")
+             (config-problems 'configured-child :port 80)))
+  (is (equal '("retries: -1 is not of type (INTEGER 0)")
+             (config-problems 'configured-child :retries -1))))
+
+(test reinitialize-instance-validates
+  (let ((s (make-instance 'configured)))
+    (signals meow:invalid-config (reinitialize-instance s :port 1))))
+
+(test invalid-config-report-names-class
+  (let ((c (make-condition 'meow:invalid-config
+                           :service (make-instance 'configured)
+                           :problems '("a" "b"))))
+    (is (search "CONFIGURED" (princ-to-string c)))
+    (is (search "a" (princ-to-string c)))))
+
+(test redefining-without-options-removes-them
+  (flet ((define (&rest options)
+           (eval `(meow:defservice redefined () () ,@options))))
+    (define '(:depends-on provider) '(:validate (lambda (s) (declare (ignore s)) '("no"))))
+    (is (equal '("no") (config-problems 'redefined)))
+    (define)
+    (is (null (config-problems 'redefined)))
+    (is (null (meow:service-dependencies (make-instance 'redefined))))))

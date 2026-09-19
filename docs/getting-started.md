@@ -12,7 +12,8 @@ ln -s ~/git/meow ~/quicklisp/local-projects/meow
 (ql:quickload :meow)
 ```
 
-Dependencies: `bordeaux-threads` (bt2 API) and `alexandria`.
+Dependencies: `bordeaux-threads` (bt2 API), `alexandria` and
+`closer-mop`.
 
 ## Tests
 

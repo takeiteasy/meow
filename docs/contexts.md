@@ -21,6 +21,7 @@ child.
 | `(mount ctx class &rest initargs &key restart)` | Start a service of `class` and return its process. Start errors, such as `already-registered`, are signalled in the caller. |
 | `(unmount ctx child &key (timeout 5))` | Stop `child`, a name or process, without restarting it, waiting for `dispose` and unregistration to finish. Returns `t`, or nil if `child` isn't mounted. |
 | `(children ctx)` | `(name process restart)` for each child, in mount order. |
+| `(reload ctx child &key (timeout 5))` | Restart `child` with the same instance. See [hot reload](reload.md). |
 
 Children use the context's registry and debug flag. A child's name is its
 service name, or nil for an unregistered child such as a
@@ -43,7 +44,9 @@ A child that exits and isn't restarted is removed from `children`.
 A context allows up to `:intensity` restarts (default 5) within
 `:period` seconds (default 10). The next restart after that stops the
 context with reason `:restart-limit` instead. A restart whose start
-signals an error counts toward the limit and is tried again.
+signals an error counts toward the limit and is tried again, so a child
+whose [config](config.md) no longer validates stops the context with
+`:restart-limit`.
 
 ## Stopping
 

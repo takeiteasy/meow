@@ -43,9 +43,57 @@ the service stops. START-SERVICE captures the value.")
     (declare (ignore reason))
     nil))
 
+(define-condition invalid-config (error)
+  ((service :initarg :service :reader invalid-config-service)
+   (problems :initarg :problems :reader invalid-config-problems))
+  (:report (lambda (condition stream)
+             (format stream "Invalid config for ~s:~{~%  ~a~}"
+                     (class-name (class-of (invalid-config-service condition)))
+                     (invalid-config-problems condition)))))
+
+(defgeneric %config-problems (service)
+  (:documentation "Problems found by :VALIDATE functions, superclasses first.")
+  (:method-combination append :most-specific-last)
+  (:method append ((service service)) '()))
+
+(defun %type-problems (service)
+  (loop for slot in (c2mop:class-slots (class-of service))
+        for name = (c2mop:slot-definition-name slot)
+        for type = (c2mop:slot-definition-type slot)
+        unless (or (eq type t)
+                   (not (slot-boundp service name))
+                   (typep (slot-value service name) type))
+          collect (format nil "~(~a~): ~s is not of type ~s"
+                          name (slot-value service name) type)))
+
+(defun %validate (service)
+  "Signal INVALID-CONFIG unless every typed slot holds a value of its type
+and the :VALIDATE functions find no problems."
+  (a:when-let ((problems (or (%type-problems service)
+                             (%config-problems service))))
+    (error 'invalid-config :service service :problems problems)))
+
+;;; Not SHARED-INITIALIZE, which UPDATE-INSTANCE-FOR-REDEFINED-CLASS also
+;;; calls on a live service's thread.
+(defmethod initialize-instance :after ((service service) &key)
+  (%validate service))
+
+(defmethod reinitialize-instance :after ((service service) &key)
+  (%validate service))
+
+(defun %remove-option-method (function qualifiers class-name)
+  "Remove the method a DEFSERVICE option defined, once the option is gone."
+  (let* ((function (fdefinition function))
+         (method (find-method function qualifiers (list (find-class class-name))
+                              nil)))
+    (when method
+      (remove-method function method))))
+
 (defmacro defservice (name direct-superclasses direct-slots &rest options)
   "Define a service class. Options are DEFCLASS options plus
-(:depends-on name...) and (:name registration-name), which defaults to NAME."
+(:depends-on name...), (:name registration-name), which defaults to NAME,
+and (:validate function), which takes the instance and returns a list of
+problem strings."
   (flet ((option (key) (assoc key options)))
     (let ((initargs (rest (option :default-initargs))))
       `(progn
@@ -57,11 +105,17 @@ the service stops. START-SERVICE captures the value.")
                 `(:name ',(if (option :name) (second (option :name)) name))))
            ,@(remove-if (lambda (option)
                           (member (first option)
-                                  '(:depends-on :name :default-initargs)))
+                                  '(:depends-on :name :validate
+                                    :default-initargs)))
                         options))
-         ,@(when (option :depends-on)
-             `((defmethod service-dependencies ((service ,name))
-                 ',(rest (option :depends-on)))))
+         ,(if (option :depends-on)
+              `(defmethod service-dependencies ((service ,name))
+                 ',(rest (option :depends-on)))
+              `(%remove-option-method 'service-dependencies '() ',name))
+         ,(if (option :validate)
+              `(defmethod %config-problems append ((service ,name))
+                 (funcall #',(second (option :validate)) service))
+              `(%remove-option-method '%config-problems '(append) ',name))
          (find-class ',name)))))
 
 (defun service-ready-p (service)
@@ -129,6 +183,14 @@ resource, is its disposer. Returns the resource and the release function."
                                  (setf ,resource ,var)
                                  (lambda () ,@cleanup))))))
        (values ,resource ,release))))
+
+(defun %reset (service)
+  "Clear the runtime state of a stopped SERVICE so it can be started again."
+  (with-slots (process deps effects status) service
+    (setf process nil
+          deps '()
+          effects '()
+          status :waiting)))
 
 (defgeneric %teardown (service reason)
   (:documentation "Unwind SERVICE's effects, then DISPOSE."))

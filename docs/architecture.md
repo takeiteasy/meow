@@ -7,8 +7,7 @@ application-specific code.
 
 ```
 ┌───────────────────────────────────────────┐
-│ hot reload · config                       │  planned
-├───────────────────────────────────────────┤
+│ hot reload · config                       │  built
 │ events                                    │  built
 │ effects · delegation (agents)             │  built
 │ context · supervisor                      │  built
@@ -31,6 +30,10 @@ application-specific code.
 - An [effect](effects.md) is a resource released when its service stops.
 - An [agent](delegation.md) is a service delegated to a context by a
   parent process, which it reports back to when it finishes or exits.
+- A service's [config](config.md) is validated when the instance is
+  built.
+- [Reload](reload.md) restarts a context's child in a new process, keeping
+  its instance.
 - An [event](events.md) listener runs on its own service's process and is
   removed when that service stops.
 - Threads are never killed. Processes stop cooperatively.

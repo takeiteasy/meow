@@ -20,11 +20,13 @@
    #:service-dependencies #:dependency
    #:metadata #:ready #:dep-down #:handle #:dispose
    #:effect #:with-effect
+   ;; config
+   #:invalid-config #:invalid-config-service #:invalid-config-problems
    ;; failure model
    #:*debug-services* #:skip-message #:stop-service
    ;; contexts
    #:context #:context-intensity #:context-period
-   #:mount #:unmount #:children
+   #:mount #:unmount #:children #:reload
    ;; delegation
    #:agent #:agent-parent #:agent-ref #:delegate
    ;; events
