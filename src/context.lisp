@@ -84,6 +84,7 @@ BACKOFF and BACKOFF-MAX override the context's :restart-delay and
 up to TIMEOUT seconds (default its shutdown, :infinity for no limit) for
 it to exit before killing it. Returns t, :killed, :timeout if it is still running after being killed,
 or nil if CHILD is not mounted."
+  (check-type timeout (or null %shutdown-type))
   (%context-call context (list '%unmount child timeout)))
 
 (defun children (context)
@@ -99,6 +100,7 @@ again. Returns the new process, or nil if CHILD is not mounted. If it fails
 to stop within TIMEOUT seconds (default its shutdown, :infinity for no
 limit), which signals
 STOP-TIMEOUT, or to start, it is removed and the error is signalled."
+  (check-type timeout (or null %shutdown-type))
   (a:when-let ((result (%context-call context (list '%reload child timeout))))
     (destructuring-bind (status value) result
       (if (eq status :ok)
@@ -282,7 +284,8 @@ delay, doubled for each earlier restart within period up to the max if set."
           :process (child-process child)
           :restart (child-restart child)
           :state (if pending :restarting :running)
-          :restart-in (and pending (max 0 (- (first pending) (%now)))))))
+          :restart-in (and pending
+                           (float (max 0 (- (first pending) (%now))) 1.0)))))
 
 (defmethod handle ((context context) message)
   (multiple-value-bind (tag a b c)

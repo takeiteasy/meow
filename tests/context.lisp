@@ -373,6 +373,16 @@
       (is (eq :killed (meow:process-exit-reason p)))
       (stop-and-join ctx))))
 
+(test invalid-stop-timeouts-signal-in-caller
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'provider)))
+      (signals type-error (meow:unmount ctx 'provider :timeout :infinite))
+      (signals type-error (meow:reload ctx 'provider :timeout -1))
+      (is (meow:process-alive-p ctx))
+      (is (eq p (child-process ctx 'provider)))
+      (stop-and-join ctx))))
+
 (test teardown-waits-for-an-infinite-shutdown
   (with-fresh-registry ()
     (with-teardown-reports (reports)
