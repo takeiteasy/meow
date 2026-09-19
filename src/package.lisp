@@ -16,7 +16,7 @@
    #:subscribe #:unsubscribe
    ;; services
    #:service #:defservice #:start-service
-   #:service-name #:service-registry #:service-process #:service-ready-p
+   #:service-name #:service-registry #:service-context #:service-process #:service-ready-p
    #:service-dependencies #:dependency
    #:metadata #:ready #:dep-down #:handle #:dispose
    #:effect #:with-effect
@@ -31,4 +31,5 @@
    ;; delegation
    #:agent #:agent-parent #:agent-ref #:delegate
    ;; events
-   #:on #:emit #:emit-serial #:emit-parallel #:bail #:*event-timeout*))
+   #:on #:emit #:emit-serial #:emit-parallel #:bail
+   #:*event-timeout* #:*event-scope*))

@@ -23,7 +23,9 @@ child.
 | `(children ctx)` | `(name process restart)` for each child, in mount order. |
 | `(reload ctx child &key timeout)` | Restart `child` with the same instance. See [hot reload](reload.md). |
 
-Children use the context's registry and debug flag. A child's name is its
+Children use the context's registry and debug flag, and their
+`service-context` is the context. [Events](events.md#scope) can be scoped
+to a context's subtree or its ancestors. A child's name is its
 service name, or nil for an unregistered child such as a
 [delegated agent](delegation.md).
 

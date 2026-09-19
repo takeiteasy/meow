@@ -1,7 +1,7 @@
 (in-package #:meow)
 
-(defstruct (listener (:constructor make-listener (process function)))
-  process function (active t))
+(defstruct (listener (:constructor make-listener (service process function)))
+  service process function (active t))
 
 (defstruct (delivery (:constructor make-delivery (listener args))
                      (:predicate %delivery-p))
@@ -11,6 +11,11 @@
   "Seconds EMIT-SERIAL and BAIL wait for each listener, and EMIT-PARALLEL
 waits for all of them, or nil to wait forever.")
 
+(defvar *event-scope* :down
+  "Which listeners an event on a context reaches: :down for the context and
+everything mounted under it, :up for the context, its ancestors and the
+services mounted directly in any of them, or :both.")
+
 (defun %deliver (delivery)
   "Run DELIVERY's listener unless it was released after being sent."
   (let ((listener (delivery-listener delivery)))
@@ -18,11 +23,11 @@ waits for all of them, or nil to wait forever.")
       (apply (listener-function listener) (delivery-args delivery)))))
 
 (defun on (service event function)
-  "Call FUNCTION on SERVICE's process whenever EVENT is emitted on its
-registry. The listener is an effect of SERVICE. Returns a function that
+  "Call FUNCTION on SERVICE's process whenever EVENT is emitted in its
+scope. The listener is an effect of SERVICE. Returns a function that
 removes it early. Only callable from SERVICE's process."
   (let ((registry (service-registry service))
-        (listener (make-listener (service-process service) function)))
+        (listener (make-listener service (service-process service) function)))
     (effect service
             (lambda ()
               (%with-registry-lock (registry)
@@ -34,16 +39,46 @@ removes it early. Only callable from SERVICE's process."
                   (unless (gethash event listeners)
                     (remhash event listeners))))))))
 
+(defun %within-p (service context)
+  "True if SERVICE is CONTEXT or mounted somewhere under it."
+  (loop for s = service then (service-context s)
+        while s
+        thereis (eq s context)))
+
+(defun %scope (target)
+  "The context an emit on TARGET is scoped to, or nil for its whole registry."
+  (typecase target
+    (registry nil)
+    (context target)
+    (t (service-context target))))
+
+;;; TODO: walks every listener's context chain per emit, O(listeners x depth);
+;;; keep listener tables per context if emit rates matter.
 (defun %listeners (target event)
-  (let ((registry (if (typep target 'registry)
-                      target
-                      (service-registry target))))
-    (%with-registry-lock (registry)
-      (copy-list (gethash event listeners)))))
+  (let* ((registry (if (typep target 'registry)
+                       target
+                       (service-registry target)))
+         (context (%scope target))
+         (all (%with-registry-lock (registry)
+                (copy-list (gethash event listeners)))))
+    (if context
+        (flet ((down (listener) (%within-p (listener-service listener) context))
+               (up (listener)
+                 (let ((service (listener-service listener)))
+                   (or (%within-p context service)
+                       (%within-p context (service-context service))))))
+          (remove-if-not (ecase *event-scope*
+                           (:down #'down)
+                           (:up #'up)
+                           (:both (lambda (listener)
+                                    (or (down listener) (up listener)))))
+                         all))
+        all)))
 
 (defun emit (target event &rest args)
-  "Send EVENT with ARGS to every listener on TARGET, a service or registry,
-without waiting."
+  "Send EVENT with ARGS to every listener in TARGET's scope without waiting.
+TARGET is a registry, a context, or a service, meaning the context it is
+mounted in."
   (dolist (listener (%listeners target event))
     (cast (listener-process listener) (make-delivery listener args))))
 

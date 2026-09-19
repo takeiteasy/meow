@@ -1,7 +1,8 @@
 # Events
 
 Services can listen for named events and emit them to each other. Each
-[registry](registry.md) has its own event bus.
+[registry](registry.md) has its own event bus, and an event can be
+[scoped](#scope) to part of a context tree.
 
 ```lisp
 (defmethod ready ((s logger))
@@ -21,8 +22,32 @@ Services can listen for named events and emit them to each other. Each
 | `(emit-parallel target event &rest args)` | Send to every listener at once and wait for all of them. Returns their values in registration order. |
 | `(bail target event &rest args)` | Call listeners in order until one returns non-nil, and return that value. Returns nil if none does. |
 
-`target` is a registry, or a service, which means the registry that
-service uses. Events compare with `equal`. The emitter can be any thread.
+Events compare with `equal`. The emitter can be any thread.
+
+## Scope
+
+`target` decides which listeners an event reaches:
+
+| `target` | Reaches |
+|---|---|
+| a registry | every listener on it |
+| a [context](contexts.md) | listeners chosen by `*event-scope*` |
+| any other service | as its context (`service-context`), or its registry if it isn't mounted |
+
+`*event-scope*` applies to context targets:
+
+| `*event-scope*` | Reaches |
+|---|---|
+| `:down` (default) | the context and everything mounted under it, at any depth |
+| `:up` | the context, its ancestors, and services mounted directly in any of them |
+| `:both` | either |
+
+```lisp
+;; app{ a, inner{ b, deep{ c } } }
+(emit inner :reload)                  ; b, c
+(let ((*event-scope* :up))
+  (emit inner :changed))              ; a, b
+```
 
 ## Delivery
 

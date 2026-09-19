@@ -132,8 +132,10 @@ still running."
 
 (defun %start-child (context child)
   "Start CHILD with a fresh instance from its spec."
-  (setf (child-service child) (apply #'make-instance (child-class child)
-                                     (child-initargs child)))
+  (let ((service (apply #'make-instance (child-class child)
+                        (child-initargs child))))
+    (setf (slot-value service 'context) context
+          (child-service child) service))
   (%run-child context child))
 
 (defun %add-child (context class args)

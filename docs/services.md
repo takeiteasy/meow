@@ -41,6 +41,8 @@ Specialise any of these generic functions. Each has a no-op default.
 [events](events.md).
 
 `(dependency s name)` returns a dependency's current process.
+`(service-context s)` returns the [context](contexts.md) it is mounted in,
+or nil.
 `(service-ready-p s)` returns true when every dependency is present.
 
 ## Running

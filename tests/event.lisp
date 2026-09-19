@@ -29,6 +29,11 @@ signals an error; otherwise it is the listener's value."
        :ok)
       (:emit-serial (apply #'meow:emit-serial s args) :ok)
       (:emit-parallel (apply #'meow:emit-parallel s args))
+      (:context-name (let ((context (meow:service-context s)))
+                       (and context (meow:service-name context))))
+      (:emit-in-context
+       (let ((meow:*event-scope* (first args)))
+         (apply #'meow:emit-parallel (meow:service-context s) (rest args))))
       (:bail (apply #'meow:bail s args)))))
 
 (defun start-listener (name &rest on-args)
@@ -188,3 +193,66 @@ signals an error; otherwise it is the listener's value."
       (is (equal '(nil :b) (meow:emit-parallel r :ask)))
       (join a)
       (stop-and-join b))))
+
+(defun mount-listener (context name)
+  "Mount a listener on CONTEXT, a process, that answers :ping with NAME."
+  (let ((p (meow:mount context 'listening :name name :reporter (meow:self))))
+    (meow:call p (list :on :ping :result name))
+    p))
+
+(defmacro with-event-tree ((&optional (app (gensym))) &body body)
+  "APP is the service of the tree app{ :a inner{ :b deep{ :c } } }, beside
+other{ :d } and an unmounted :top, each listening for :ping."
+  `(with-fresh-registry ()
+     (let* ((,app (make-instance 'meow:context :name :app))
+            (app-process (meow:start-service ,app))
+            (other (meow:start-service (make-instance 'meow:context :name :other))))
+       (declare (ignorable ,app))
+       (mount-listener app-process :a)
+       (let* ((inner (meow:mount app-process 'meow:context :name :inner))
+              (deep (progn (mount-listener inner :b)
+                           (meow:mount inner 'meow:context :name :deep))))
+         (mount-listener deep :c))
+       (mount-listener other :d)
+       (start-listener :top :ping :result :top)
+       (unwind-protect (progn ,@body)
+         (stop-and-join (meow:lookup :top))
+         (stop-and-join other)
+         (stop-and-join app-process)))))
+
+(defun emit-from (name scope)
+  "Results of emit-parallel :ping on NAME's context with SCOPE."
+  (meow:call (meow:lookup name) (list :emit-in-context scope :ping)))
+
+(test service-context-links-mounted-services
+  (with-event-tree (app)
+    (is (null (meow:service-context app)))
+    (is (eq :app (meow:call (meow:lookup :a) '(:context-name))))
+    (is (eq :deep (meow:call (meow:lookup :c) '(:context-name))))
+    (is (null (meow:call (meow:lookup :top) '(:context-name))))
+    (is (equal '(:a :b :c :d :top) (meow:emit-parallel meow:*registry* :ping)))))
+
+(test context-target-reaches-its-subtree
+  (with-event-tree (app)
+    (is (equal '(:a :b :c) (meow:emit-parallel app :ping)))
+    (is (equal '(:b :c) (emit-from :b :down)))
+    (is (equal '(:c) (emit-from :c :down)))))
+
+(test service-target-means-its-context
+  (with-event-tree ()
+    (is (equal '(:b :c) (meow:call (meow:lookup :b) '(:emit-parallel :ping))))
+    (is (equal '(:d) (meow:call (meow:lookup :d) '(:emit-parallel :ping))))
+    (is (equal '(:a :b :c :d :top)
+               (meow:call (meow:lookup :top) '(:emit-parallel :ping))))))
+
+(test up-scope-bubbles-through-ancestors
+  (with-event-tree ()
+    (is (equal '(:a :b) (emit-from :b :up)))
+    (is (equal '(:a :b :c) (emit-from :c :up)))
+    (is (equal '(:a) (emit-from :a :up)))))
+
+(test both-scope-reaches-up-and-down
+  (with-event-tree (app)
+    (is (equal '(:a :b :c) (emit-from :b :both)))
+    (signals error (let ((meow:*event-scope* :sideways))
+                     (meow:emit-parallel app :ping)))))
