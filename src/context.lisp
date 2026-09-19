@@ -50,6 +50,12 @@ running."
                      (stop-timeout-process condition)
                      (stop-timeout-seconds condition)))))
 
+(defgeneric %scope (service)
+  (:documentation "The context an event emitted on SERVICE is scoped to, or
+nil for its whole registry.")
+  (:method ((service service)) (service-context service))
+  (:method ((context context)) context))
+
 (defun %context-call (context message)
   (multiple-value-bind (reply status) (call context message :timeout nil)
     (when status

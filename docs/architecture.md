@@ -35,7 +35,8 @@ application-specific code.
 - [Reload](reload.md) restarts a context's child in a new process, keeping
   its instance.
 - An [event](events.md) listener runs on its own service's process and is
-  removed when that service stops.
+  removed when that service stops. Events reach a whole registry or part of
+  a context tree.
 - Threads are never killed. Processes stop cooperatively.
 
 ## Implementations

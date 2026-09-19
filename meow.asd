@@ -11,10 +11,10 @@
                (:file "process")
                (:file "call")
                (:file "registry")
+               (:file "event")
                (:file "service")
                (:file "context")
-               (:file "agent")
-               (:file "event"))
+               (:file "agent"))
   :in-order-to ((test-op (test-op "meow/tests"))))
 
 (defsystem "meow/tests"

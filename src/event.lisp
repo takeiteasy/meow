@@ -45,20 +45,14 @@ removes it early. Only callable from SERVICE's process."
         while s
         thereis (eq s context)))
 
-(defun %scope (target)
-  "The context an emit on TARGET is scoped to, or nil for its whole registry."
-  (typecase target
-    (registry nil)
-    (context target)
-    (t (service-context target))))
-
 ;;; TODO: walks every listener's context chain per emit, O(listeners x depth);
 ;;; keep listener tables per context if emit rates matter.
 (defun %listeners (target event)
   (let* ((registry (if (typep target 'registry)
                        target
                        (service-registry target)))
-         (context (%scope target))
+         (context (unless (typep target 'registry)
+                    (%scope target)))
          (all (%with-registry-lock (registry)
                 (copy-list (gethash event listeners)))))
     (if context
@@ -107,30 +101,27 @@ return that value."
 (defun emit-parallel (target event &rest args)
   "Send EVENT with ARGS to every listener on TARGET at once, wait for all of
 them, and return their values in registration order."
-  (let* ((deadline (and *event-timeout* (+ (%now) *event-timeout*)))
-         (pending '()))
+  (let ((deadline (and *event-timeout* (+ (%now) *event-timeout*)))
+        (deliveries (mapcar (lambda (listener) (make-delivery listener args))
+                            (%listeners target event)))
+        (calls '()))
     (unwind-protect
-         (let ((started (mapcar (lambda (listener)
-                                  (let ((delivery (make-delivery listener args))
-                                        (process (listener-process listener)))
-                                    (if (eq process (self))
-                                        delivery
-                                        (car (push (%start-call process delivery)
-                                                   pending)))))
-                                (%listeners target event))))
-           (mapcar (lambda (started)
-                     (if (consp started)
-                         (first started)
-                         (multiple-value-bind (value status)
-                             (%await-call started
-                                          (and deadline
-                                               (max 0 (- deadline (%now)))))
-                           (unless status value))))
-                   ;; A listener on the emitter's own process runs while the
-                   ;; others do.
-                   (mapcar (lambda (started)
-                             (if (%delivery-p started)
-                                 (list (%deliver started))
-                                 started))
-                           started)))
-      (mapc #'%cancel-call pending))))
+         (progn
+           (setf calls (mapcar (lambda (delivery)
+                                 (let ((process (listener-process
+                                                 (delivery-listener delivery))))
+                                   (unless (eq process (self))
+                                     (%start-call process delivery))))
+                               deliveries))
+           (let ((own (mapcar (lambda (delivery call)
+                                (unless call (%deliver delivery)))
+                              deliveries calls)))
+             (mapcar (lambda (call value)
+                       (if call
+                           (multiple-value-bind (value status)
+                               (%await-call call (and deadline
+                                                      (max 0 (- deadline (%now)))))
+                             (unless status value))
+                           value))
+                     calls own)))
+      (mapc #'%cancel-call (remove nil calls)))))
