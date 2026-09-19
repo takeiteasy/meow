@@ -28,6 +28,7 @@ signals an error; otherwise it is the listener's value."
        (funcall (cdr (assoc (first args) (releases s))))
        :ok)
       (:emit-serial (apply #'meow:emit-serial s args) :ok)
+      (:emit-parallel (apply #'meow:emit-parallel s args))
       (:bail (apply #'meow:bail s args)))))
 
 (defun start-listener (name &rest on-args)
@@ -149,3 +150,41 @@ signals an error; otherwise it is the listener's value."
       (is (null (meow:bail other :ping)))
       (is (null (drain)))
       (stop-and-join p))))
+
+(test emit-parallel-waits-for-all-at-once
+  (with-fresh-registry (r)
+    (let ((a (start-listener :a :ask :result :a :delay 0.5))
+          (b (start-listener :b :ask :result :b :delay 0.5))
+          (start (now)))
+      (is (equal '(:a :b) (meow:emit-parallel r :ask)))
+      (is (< (- (now) start) 0.8))
+      (is (null (meow:emit-parallel r :unheard)))
+      (stop-and-join a)
+      (stop-and-join b))))
+
+(test emit-parallel-shares-one-deadline
+  (with-fresh-registry (r)
+    (let ((a (start-listener :a :ask :result :a :delay 1))
+          (b (start-listener :b :ask :result :b :delay 1))
+          (start (now)))
+      (is (equal '(nil nil) (let ((meow:*event-timeout* 0.2))
+                              (meow:emit-parallel r :ask))))
+      (is (< (- (now) start) 0.5))
+      (stop-and-join a)
+      (stop-and-join b))))
+
+(test emit-parallel-to-self-runs-directly
+  (with-fresh-registry ()
+    (let ((a (start-listener :a :ask :result :mine))
+          (b (start-listener :b :ask :result :b)))
+      (is (equal '(:mine :b) (meow:call a '(:emit-parallel :ask))))
+      (stop-and-join a)
+      (stop-and-join b))))
+
+(test emit-parallel-crashed-listener-gives-nil
+  (with-fresh-registry (r)
+    (let ((a (start-listener :a :ask :result :crash))
+          (b (start-listener :b :ask :result :b)))
+      (is (equal '(nil :b) (meow:emit-parallel r :ask)))
+      (join a)
+      (stop-and-join b))))

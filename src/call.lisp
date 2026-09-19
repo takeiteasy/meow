@@ -19,22 +19,30 @@
   "Answer the CALL that sent CELL."
   (%settle cell :value value))
 
-(defun call (process message &key (timeout 5))
-  "Send MESSAGE to PROCESS as (:call cell message) and wait for the reply.
-Returns (values reply nil), (values nil :timeout) after TIMEOUT seconds (nil
-waits forever), (values nil (:down reason)) if PROCESS exits first, or
-(values nil (:error condition)) if a service skipped the message. On timeout
-PROCESS keeps running and its eventual reply is discarded."
+(defstruct (pending-call (:constructor %make-pending-call (process cell hook)))
+  process cell hook)
+
+(defun %start-call (process message)
+  "Send MESSAGE to PROCESS as (:call cell message) without waiting. If PROCESS
+has already exited, nothing is sent and the cell is settled as :down."
   (let* ((cell (%make-reply-cell))
          (hook (add-exit-hook process (lambda (process reason)
                                         (declare (ignore process))
                                         (%settle cell :down reason)))))
-    (unless hook
-      (return-from call
-        (values nil (list :down (process-exit-reason process)))))
+    (if hook
+        (send process (list :call cell message))
+        (%settle cell :down (process-exit-reason process)))
+    (%make-pending-call process cell hook)))
+
+(defun %cancel-call (pending)
+  (a:when-let ((hook (pending-call-hook pending)))
+    (remove-exit-hook (pending-call-process pending) hook)))
+
+(defun %await-call (pending timeout)
+  "Wait up to TIMEOUT seconds for PENDING's reply, with CALL's return values."
+  (let ((cell (pending-call-cell pending)))
     (unwind-protect
          (progn
-           (send process (list :call cell message))
            (bt2:with-lock-held ((reply-cell-lock cell))
              (%wait-until (reply-cell-lock cell) (reply-cell-cv cell)
                           (lambda () (not (eq (reply-cell-state cell) :pending)))
@@ -44,7 +52,15 @@ PROCESS keeps running and its eventual reply is discarded."
              (:down (values nil (list :down (reply-cell-value cell))))
              (:error (values nil (list :error (reply-cell-value cell))))
              (:pending (values nil :timeout))))
-      (remove-exit-hook process hook))))
+      (%cancel-call pending))))
+
+(defun call (process message &key (timeout 5))
+  "Send MESSAGE to PROCESS as (:call cell message) and wait for the reply.
+Returns (values reply nil), (values nil :timeout) after TIMEOUT seconds (nil
+waits forever), (values nil (:down reason)) if PROCESS exits first, or
+(values nil (:error condition)) if a service skipped the message. On timeout
+PROCESS keeps running and its eventual reply is discarded."
+  (%await-call (%start-call process message) timeout))
 
 (defun cast (process message)
   "Send MESSAGE to PROCESS as (:cast message) without waiting."

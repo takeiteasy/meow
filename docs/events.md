@@ -18,6 +18,7 @@ Services can listen for named events and emit them to each other. Each
 | `(on service event function)` | Call `function` with the emitted args whenever `event` is emitted. Returns a function that removes the listener. |
 | `(emit target event &rest args)` | Send to every listener without waiting. Returns nil. |
 | `(emit-serial target event &rest args)` | Call each listener in registration order, waiting for each one. Returns nil. |
+| `(emit-parallel target event &rest args)` | Send to every listener at once and wait for all of them. Returns their values in registration order. |
 | `(bail target event &rest args)` | Call listeners in order until one returns non-nil, and return that value. Returns nil if none does. |
 
 `target` is a registry, or a service, which means the registry that
@@ -31,8 +32,9 @@ listener is handled like an error in `handle` (see the
 [failure model](services.md#failure-model)).
 
 `emit-serial` and `bail` wait up to `*event-timeout*` seconds for each
-listener (default nil, which waits forever). A listener that exits, skips the
-delivery or times out counts as returning nil. A timed-out listener still
+listener (default nil, which waits forever); `emit-parallel` waits that long
+for all of them together. A listener that exits, skips the delivery or times
+out counts as returning nil. A timed-out listener still
 runs, but its result is discarded. A service that emits an event it
 listens for itself runs its own listener directly.
 
@@ -45,5 +47,5 @@ Deliveries that are already queued when it is removed are dropped.
 ## Rules
 
 `on` can only be called from the service's own process, for example in
-`ready` or `handle`. Two services that `emit-serial` or `bail` to each other
+`ready` or `handle`. Two services that wait on each other's events
 at the same time deadlock, just as with `call`.

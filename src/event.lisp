@@ -8,8 +8,8 @@
   listener args)
 
 (defvar *event-timeout* nil
-  "Seconds EMIT-SERIAL and BAIL wait for each listener, or nil to wait
-forever.")
+  "Seconds EMIT-SERIAL and BAIL wait for each listener, and EMIT-PARALLEL
+waits for all of them, or nil to wait forever.")
 
 (defun %deliver (delivery)
   "Run DELIVERY's listener unless it was released after being sent."
@@ -68,3 +68,34 @@ return that value."
   (dolist (listener (%listeners target event))
     (a:when-let ((value (%deliver-and-wait listener args)))
       (return value))))
+
+(defun emit-parallel (target event &rest args)
+  "Send EVENT with ARGS to every listener on TARGET at once, wait for all of
+them, and return their values in registration order."
+  (let* ((deadline (and *event-timeout* (+ (%now) *event-timeout*)))
+         (pending '()))
+    (unwind-protect
+         (let ((started (mapcar (lambda (listener)
+                                  (let ((delivery (make-delivery listener args))
+                                        (process (listener-process listener)))
+                                    (if (eq process (self))
+                                        delivery
+                                        (car (push (%start-call process delivery)
+                                                   pending)))))
+                                (%listeners target event))))
+           (mapcar (lambda (started)
+                     (if (consp started)
+                         (first started)
+                         (multiple-value-bind (value status)
+                             (%await-call started
+                                          (and deadline
+                                               (max 0 (- deadline (%now)))))
+                           (unless status value))))
+                   ;; A listener on the emitter's own process runs while the
+                   ;; others do.
+                   (mapcar (lambda (started)
+                             (if (%delivery-p started)
+                                 (list (%deliver started))
+                                 started))
+                           started)))
+      (mapc #'%cancel-call pending))))
