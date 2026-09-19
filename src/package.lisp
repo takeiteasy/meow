@@ -25,7 +25,7 @@
    ;; failure model
    #:*debug-services* #:skip-message #:stop-service
    ;; contexts
-   #:context #:context-intensity #:context-period
+   #:context #:context-intensity #:context-period #:context-registry
    #:mount #:unmount #:children #:reload #:update
    #:stop-timeout #:stop-timeout-process #:stop-timeout-seconds
    ;; delegation

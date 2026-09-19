@@ -227,6 +227,15 @@ other{ :d } and an unmounted :top, each listening for :ping."
   "Results of emit-parallel :ping on NAME's context with SCOPE."
   (meow:call (meow:lookup name) (list :emit-in-context scope :ping)))
 
+(test events-cross-an-isolating-context
+  (with-fresh-registry (r)
+    (let* ((iso (make-instance 'meow:context :name :iso :isolate '(:a)))
+           (p (meow:start-service iso)))
+      (mount-listener p :a)
+      (is (equal '(:a) (meow:emit-parallel r :ping)))
+      (is (equal '(:a) (meow:emit-parallel iso :ping)))
+      (stop-and-join p))))
+
 (test service-context-links-mounted-services
   (with-event-tree (app)
     (is (null (meow:service-context app)))

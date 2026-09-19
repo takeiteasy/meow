@@ -26,7 +26,7 @@ services mounted directly in any of them, or :both.")
   "Call FUNCTION on SERVICE's process whenever EVENT is emitted in its
 scope. The listener is an effect of SERVICE. Returns a function that
 removes it early. Only callable from SERVICE's process."
-  (let ((registry (service-registry service))
+  (let ((registry (%root (service-registry service)))
         (listener (make-listener service (service-process service) function)))
     (effect service
             (lambda ()
@@ -48,9 +48,9 @@ removes it early. Only callable from SERVICE's process."
 ;;; TODO: walks every listener's context chain per emit, O(listeners x depth);
 ;;; keep listener tables per context if emit rates matter.
 (defun %listeners (target event)
-  (let* ((registry (if (typep target 'registry)
-                       target
-                       (service-registry target)))
+  (let* ((registry (%root (if (typep target 'registry)
+                              target
+                              (service-registry target))))
          (context (unless (typep target 'registry)
                     (%scope target)))
          (all (%with-registry-lock (registry)

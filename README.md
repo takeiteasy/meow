@@ -6,9 +6,10 @@ A Cordis-style plugin/service core for Common Lisp, in early
 development. So far it provides processes (a thread plus a mailbox) with
 call/cast, a name registry with subscribe and await, CLOS services that
 wait for their dependencies in any mount order, contexts that supervise
-and restart them, short-lived agents delegated to a context, effects
-that release resources when a service stops, an event bus, config
-validation, live config updates and hot reload. Runs on SBCL and ECL.
+and restart them and can isolate service names in their subtree,
+short-lived agents delegated to a context, effects that release
+resources when a service stops, an event bus, config validation, live
+config updates and hot reload. Runs on SBCL and ECL.
 
 ## Docs
 
@@ -24,6 +25,7 @@ validation, live config updates and hot reload. Runs on SBCL and ECL.
 - [Config](docs/config.md)
 - [Hot reload](docs/reload.md)
 - [Updating config](docs/update.md)
+- [Isolation](docs/isolation.md)
 
 ## License
 

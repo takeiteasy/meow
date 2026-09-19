@@ -1,8 +1,9 @@
 # Events
 
 Services can listen for named events and emit them to each other. Each
-[registry](registry.md) has its own event bus, and an event can be
-[scoped](#scope) to part of a context tree.
+[registry](registry.md) has its own event bus, shared with its scoped
+registries, and an event can be [scoped](#scope) to part of a context
+tree.
 
 ```lisp
 (defmethod ready ((s logger))

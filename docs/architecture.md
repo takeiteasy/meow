@@ -27,6 +27,8 @@ application-specific code.
 - A [service](services.md) is a process that registers itself and waits
   for its dependencies.
 - A [context](contexts.md) is a service that supervises other services.
+  It can [isolate](isolation.md) names so its subtree has its own
+  instances.
 - An [effect](effects.md) is a resource released when its service stops.
 - An [agent](delegation.md) is a service delegated to a context by a
   parent process, which it reports back to when it finishes or exits.

@@ -26,8 +26,10 @@ child.
 | `(children ctx)` | A plist `(:name :process :restart :state :restart-in)` for each child, in mount order. See [backoff](#backoff) for `:state`. |
 | `(reload ctx child &key timeout)` | Restart `child` with the same instance. See [hot reload](reload.md). |
 | `(update ctx child &rest initargs)` | Change `child`'s initargs and mount options while it runs. See [updating config](update.md). |
+| `(context-registry ctx)` | The registry its children use. See [isolation](isolation.md). |
 
-Children use the context's registry and debug flag, and their
+Children use the context's registry, or a scoped one if it
+[isolates](isolation.md) names, and its debug flag, and their
 `service-context` is the context. [Events](events.md#scope) can be scoped
 to a context's subtree or its ancestors. A child's name is its
 service name, or nil for an unregistered child such as a

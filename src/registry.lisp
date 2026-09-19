@@ -10,7 +10,9 @@
    (entries :initform (make-hash-table :test 'equal))
    (subscribers :initform (make-hash-table :test 'equal))
    (subscriber-hooks :initform (make-hash-table :test 'eq))
-   (listeners :initform (make-hash-table :test 'equal))))
+   (listeners :initform (make-hash-table :test 'equal))
+   (parent :initarg :parent :initform nil)
+   (isolated :initarg :isolated :initform '())))
 
 (defvar *registry* (make-instance 'registry))
 
@@ -25,6 +27,18 @@
                      (already-registered-name c)
                      (already-registered-owner c)))))
 
+(defun %owner (registry name)
+  "The registry up REGISTRY's chain that holds NAME: the first isolating it,
+or the root."
+  (loop for r = registry then (slot-value r 'parent)
+        when (or (null (slot-value r 'parent))
+                 (member name (slot-value r 'isolated) :test #'equal))
+          return r))
+
+(defun %root (registry)
+  (loop for r = registry then (slot-value r 'parent)
+        unless (slot-value r 'parent) return r))
+
 (defmacro %with-registry-lock ((registry) &body body)
   `(bt2:with-lock-held ((registry-lock ,registry))
      (with-slots (entries subscribers subscriber-hooks listeners) ,registry
@@ -38,7 +52,8 @@
   "Register PROCESS under NAME with PROPS, a plist. Signals
 ALREADY-REGISTERED if a live process holds NAME. Returns t, or
 (values nil :noproc) if PROCESS has already exited."
-  (let ((owner nil))
+  (let ((registry (%owner registry name))
+        (owner nil))
     (%with-registry-lock (registry)
       (let ((existing (gethash name entries)))
         (if (and existing (process-alive-p (entry-process existing)))
@@ -63,6 +78,7 @@ ALREADY-REGISTERED if a live process holds NAME. Returns t, or
 
 (defun unregister (name &key (registry *registry*))
   "Remove NAME. Subscribers get (:unregistered name :unregistered)."
+  (setf registry (%owner registry name))
   (%with-registry-lock (registry)
     (a:when-let ((entry (gethash name entries)))
       (remove-exit-hook (entry-process entry) (entry-hook entry))
@@ -78,17 +94,25 @@ ALREADY-REGISTERED if a live process holds NAME. Returns t, or
 
 (defun lookup (name &key (registry *registry*))
   "Returns (values process props), or nil if NAME is not registered."
+  (setf registry (%owner registry name))
   (%with-registry-lock (registry)
     (a:when-let ((entry (gethash name entries)))
       (values (entry-process entry) (entry-props entry)))))
 
 (defun names (&key (registry *registry*))
-  (%with-registry-lock (registry)
-    (a:hash-table-keys entries)))
+  (let ((own (%with-registry-lock (registry)
+               (a:hash-table-keys entries))))
+    (a:if-let ((parent (slot-value registry 'parent)))
+      (append own (remove-if (lambda (name)
+                               (member name (slot-value registry 'isolated)
+                                       :test #'equal))
+                             (names :registry parent)))
+      own)))
 
 (defun await (name &key timeout (registry *registry*))
   "Wait for NAME to be registered. Returns its process, or (values nil
 :timeout) after TIMEOUT seconds (nil waits forever)."
+  (setf registry (%owner registry name))
   (%with-registry-lock (registry)
     (or (%wait-until (registry-lock registry) (registry-cv registry)
                      (lambda ()
@@ -101,6 +125,7 @@ ALREADY-REGISTERED if a live process holds NAME. Returns t, or
   "Send PROCESS (:registered name owner) and (:unregistered name reason) for
 NAME. If NAME is already registered, the first message is sent before this
 returns. Returns nil if PROCESS has already exited."
+  (setf registry (%owner registry name))
   (%with-registry-lock (registry)
     (unless (gethash process subscriber-hooks)
       (let ((hook (add-exit-hook process
@@ -116,6 +141,7 @@ returns. Returns nil if PROCESS has already exited."
     t))
 
 (defun unsubscribe (name &key (process (%require-self)) (registry *registry*))
+  (setf registry (%owner registry name))
   (%with-registry-lock (registry)
     (let ((remaining (remove process (gethash name subscribers))))
       (if remaining

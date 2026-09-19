@@ -34,6 +34,8 @@
    (restart-delay-max :initarg :restart-delay-max :initform nil
                       :type (or null (real 0)))
    (specs :initarg :children :initform '() :type list)
+   (isolate :initarg :isolate :initform '() :type list)
+   (scope :initform nil :reader context-registry)
    (children :initform '())
    (restarts :initform '()))
   (:validate %spec-problems))
@@ -153,7 +155,7 @@ killing. Returns t, :killed, or nil if it is still running."
   (let* ((self (self))
          (service (child-service child))
          (process (start-service service
-                                 :registry (service-registry context)
+                                 :registry (context-registry context)
                                  :debug (slot-value context 'debug))))
     (setf (child-name child) (service-name service)
           (child-process child) process
@@ -210,6 +212,11 @@ killing. Returns t, :killed, or nil if it is still running."
     (error (e) (list :error e))))
 
 (defmethod %startup ((context context))
+  (with-slots (isolate scope) context
+    (setf scope (if isolate
+                    (make-instance 'registry :parent (service-registry context)
+                                             :isolated isolate)
+                    (service-registry context))))
   (loop for (class . args) in (slot-value context 'specs)
         do (%add-child context class args)))
 

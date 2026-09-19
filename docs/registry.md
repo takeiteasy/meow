@@ -7,6 +7,10 @@ lock-protected data structure, not a process.
 Every function takes `:registry`, which defaults to `*registry*`. The
 binding is per thread: a spawned process does not inherit a rebinding.
 
+A registry made with `:parent` is scoped: it holds only the names in its
+`:isolated` list and passes every other name to its parent. Contexts make
+these for [isolation](isolation.md).
+
 ## API
 
 | Call | Returns |

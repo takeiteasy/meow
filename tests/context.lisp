@@ -616,3 +616,64 @@
       (is (eq p (child-process ctx 'tunable)))
       (is (= 1 (meow:call p :level)))
       (stop-and-join ctx))))
+
+(defun start-isolating (&rest initargs)
+  "A context's instance and process."
+  (let ((ctx (apply #'make-instance 'meow:context :name :ctx initargs)))
+    (values ctx (meow:start-service ctx))))
+
+(test isolated-service-coexists-with-outer
+  (with-fresh-registry ()
+    (let ((outer (meow:start-service (make-instance 'provider))))
+      (multiple-value-bind (ctx cp) (start-isolating :isolate '(provider))
+        (let ((inner (meow:mount cp 'provider)))
+          (meow:mount cp 'consumer :reporter (meow:self))
+          (is (not (eq outer inner)))
+          (is (eq outer (meow:lookup 'provider)))
+          (is (eq inner (meow:lookup 'provider
+                                     :registry (meow:context-registry ctx))))
+          (is (has (list 'consumer :ready inner) (drain))))
+        (stop-and-join cp))
+      (stop-and-join outer))))
+
+(test isolated-name-does-not-fall-back-to-outer
+  (with-fresh-registry ()
+    (let ((outer (meow:start-service (make-instance 'provider))))
+      (multiple-value-bind (ctx cp) (start-isolating :isolate '(provider))
+        (declare (ignore ctx))
+        (meow:mount cp 'consumer :reporter (meow:self))
+        (is (null (drain)))
+        (let ((inner (meow:mount cp 'provider)))
+          (is (has (list 'consumer :ready inner) (drain))))
+        (stop-and-join cp))
+      (stop-and-join outer))))
+
+(test other-names-resolve-outward
+  (with-fresh-registry ()
+    (let ((outer (meow:start-service (make-instance 'provider))))
+      (multiple-value-bind (ctx cp) (start-isolating :isolate '(other))
+        (declare (ignore ctx))
+        (meow:mount cp 'consumer :reporter (meow:self))
+        (is (has (list 'consumer :ready outer) (drain)))
+        (stop-and-join cp))
+      (stop-and-join outer))))
+
+(test nested-isolation-resolves-to-nearest
+  (with-fresh-registry ()
+    (multiple-value-bind (ctx cp) (start-isolating :isolate '(provider))
+      (let* ((mid (meow:mount cp 'provider))
+             (inner (meow:mount cp 'meow:context
+                                :name :inner :isolate '(provider consumer)
+                                :children `((provider)
+                                            (consumer :reporter ,(meow:self)))))
+             (deep (child-process inner 'provider)))
+        (is (has (list 'consumer :ready deep) (drain)))
+        (is (not (eq mid deep)))
+        (is (eq mid (meow:lookup 'provider :registry (meow:context-registry ctx))))
+        (is (null (meow:lookup 'provider)) "nothing reaches the root")
+        (is (null (meow:lookup 'consumer)))
+        (let ((inner2 (meow:reload cp inner)))
+          (is (has (list 'consumer :ready (child-process inner2 'provider))
+                   (drain))
+              "a reloaded context gets a fresh scope")))
+      (stop-and-join cp))))
