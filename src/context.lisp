@@ -157,22 +157,25 @@ remaining children are updated, with the intercept kept."
 (defun %stop-and-wait (process timeout &optional (reason :shutdown))
   "Stop PROCESS and wait up to TIMEOUT seconds for its exit hooks to run,
 then kill it and wait as long again. A TIMEOUT of :infinity waits without
-killing. Returns t, :killed, or nil if it is still running."
+killing. Returns t, :killed, or nil if it is still running. Calls from
+PROCESS to the waiting process meanwhile return (:deadlock ...)."
   ;; Hooks run in the order added, so this one fires after dispose and
   ;; unregistration.
   (let ((done (bt2:make-semaphore :name "exit")))
     (if (add-exit-hook process (lambda (process reason)
                                  (declare (ignore process reason))
                                  (bt2:signal-semaphore done)))
-        (progn
-          (stop process reason)
-          (cond ((eq timeout :infinity) (bt2:wait-on-semaphore done) t)
-                ((bt2:wait-on-semaphore done :timeout timeout) t)
-                ;; The interrupt can leave shared state inconsistent, and
-                ;; can't reach a process already in its exit hooks.
-                (t (%kill process)
-                   (when (bt2:wait-on-semaphore done :timeout timeout)
-                     (if (eq (process-exit-reason process) :killed) :killed t)))))
+        (%call-waiting-on
+         process
+         (lambda ()
+           (stop process reason)
+           (cond ((eq timeout :infinity) (bt2:wait-on-semaphore done) t)
+                 ((bt2:wait-on-semaphore done :timeout timeout) t)
+                 ;; The interrupt can leave shared state inconsistent, and
+                 ;; can't reach a process already in its exit hooks.
+                 (t (%kill process)
+                    (when (bt2:wait-on-semaphore done :timeout timeout)
+                      (if (eq (process-exit-reason process) :killed) :killed t))))))
         t)))
 
 (defun %run-child (context child)

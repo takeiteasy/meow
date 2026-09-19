@@ -67,6 +67,12 @@ the wait lock held."
                               return (cons process path))))))
       (walk from))))
 
+(defun %add-waits (process pending)
+  "Record PROCESS as waiting on PENDING. Call with the wait lock held."
+  (when pending
+    (setf (gethash process *%waits*)
+          (append pending (gethash process *%waits*)))))
+
 (defun %begin-calls (processes)
   "A pending call from the current process to each of PROCESSES, recorded as
 what it waits on. A process that would close a wait cycle gets the cycle's
@@ -79,13 +85,11 @@ processes instead, and nil stays nil."
                                    (%make-pending-call process))))
                            processes)))
         (when self
-          (a:when-let ((pending (remove-if-not #'pending-call-p calls)))
-            (setf (gethash self *%waits*)
-                  (append pending (gethash self *%waits*)))))
+          (%add-waits self (remove-if-not #'pending-call-p calls)))
         calls))))
 
 (defun %end-calls (calls)
-  "Cancel CALLS from %BEGIN-CALLS and stop waiting on them."
+  "Cancel pending CALLS and stop waiting on them."
   (let ((pending (remove-if-not #'pending-call-p calls))
         (self (self)))
     (mapc #'%cancel-call pending)
@@ -94,6 +98,15 @@ processes instead, and nil stays nil."
         (a:if-let ((left (set-difference (gethash self *%waits*) pending)))
           (setf (gethash self *%waits*) left)
           (remhash self *%waits*))))))
+
+(defun %call-waiting-on (process thunk)
+  "Call THUNK with the current process recorded as waiting on PROCESS."
+  (let ((waits (list (%make-pending-call process))))
+    (a:when-let ((self (self)))
+      (bt2:with-lock-held (*%wait-lock*)
+        (%add-waits self waits)))
+    (unwind-protect (funcall thunk)
+      (%end-calls waits))))
 
 (defun %await-call (pending timeout)
   "Wait up to TIMEOUT seconds for PENDING's reply, with CALL's return values."

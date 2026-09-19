@@ -303,6 +303,28 @@
       (is (eq :shutdown (meow:process-exit-reason p)))
       (stop-and-join ctx))))
 
+(meow:defservice context-caller (reporting) ())
+
+(defmethod meow:dispose :before ((s context-caller) reason)
+  (declare (ignore reason))
+  (report s :called (nth-value 1 (meow:call (meow:service-process
+                                             (meow:service-context s))
+                                            :ping))))
+
+(test child-calling-its-context-from-dispose-is-a-deadlock
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'context-caller :reporter (meow:self)
+                                              :shutdown 1))
+           (start (now)))
+      (is (eq t (meow:unmount ctx 'context-caller)))
+      (is (< (- (now) start) 0.5))
+      (is (equal (list 'context-caller :called (list :deadlock (list ctx p)))
+                 (meow:receive :timeout 1)))
+      (is (null (gethash ctx meow::*%waits*))
+          "the context no longer waits on the child")
+      (stop-and-join ctx))))
+
 (test reload-kills-a-stuck-child
   (with-fresh-registry ()
     (let* ((ctx (start-context))

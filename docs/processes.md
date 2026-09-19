@@ -72,7 +72,8 @@ process's thread.
 ## Deadlocks
 
 Each process waiting in `call` or a waiting [emit](events.md) is recorded
-as waiting on its targets. A call that would close a cycle, such as two
+as waiting on its targets, and a [context](contexts.md#stopping) stopping a
+child as waiting on that child. A call that would close a cycle, such as two
 services calling each other, or a process calling itself, fails at once
 with `(:deadlock processes)`. `processes` lists the cycle from `p` to the
 caller. The other calls in the cycle keep waiting and are answered once

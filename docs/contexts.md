@@ -127,6 +127,11 @@ and `reload` signals `stop-timeout` in the same case. A declared child
 that is still registered blocks its context's restart, which then
 escalates to `:restart-limit`.
 
+While a context waits for a child to stop, a call from that child to the
+context, for example from `dispose`, returns
+[`(:deadlock processes)`](processes.md#deadlocks) at once. Context
+functions such as `children` signal an error instead.
+
 ## Nesting
 
 A context can be mounted like any other service:
