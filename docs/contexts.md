@@ -22,9 +22,9 @@ child.
 | Call | Purpose |
 |---|---|
 | `(mount ctx class &rest initargs &key restart shutdown backoff backoff-max)` | Start a service of `class` and return its process. `shutdown` is how many seconds it gets to stop (default 5), or `:infinity`. See [stopping](#stopping). `backoff` and `backoff-max` override the context's [restart delay](#backoff). Start errors, such as `already-registered`, are signalled in the caller. |
-| `(unmount ctx child &key timeout)` | Stop `child`, a name or process, without restarting it, waiting `timeout` seconds (default its `shutdown`, or `:infinity`). See [stopping](#stopping). Returns `t`, `:killed`, `:timeout` if it is still running, or nil if `child` isn't mounted. |
+| `(unmount ctx child &key timeout)` | Stop `child`, a name or process, without restarting it, waiting `timeout` seconds (default its `shutdown`, or `:infinity`). See [stopping](#stopping). Returns `t`, `:killed`, `:timeout` if it is still running, or nil if `child` isn't mounted. Signals an error if `child` is the caller. |
 | `(children ctx)` | A plist `(:name :process :restart :state :restart-in)` for each child, in mount order. See [backoff](#backoff) for `:state`. |
-| `(reload ctx child &key timeout)` | Restart `child` with the same instance. See [hot reload](reload.md). |
+| `(reload ctx child &key timeout)` | Restart `child` with the same instance, or nil if `child` isn't mounted. Signals an error if `child` is the caller. See [hot reload](reload.md). |
 | `(update ctx child &rest initargs)` | Change `child`'s initargs and mount options while it runs. See [updating config](update.md). |
 | `(intercept ctx head &rest initargs)` | Set config for matching children in the subtree. See [intercepts](intercept.md). |
 | `(context-registry ctx)` | The registry its children use. See [isolation](isolation.md). |
@@ -127,10 +127,15 @@ and `reload` signals `stop-timeout` in the same case. A declared child
 that is still registered blocks its context's restart, which then
 escalates to `:restart-limit`.
 
-While a context waits for a child to stop, a call from that child to the
-context, for example from `dispose`, returns
-[`(:deadlock processes)`](processes.md#deadlocks) at once. Context
-functions such as `children` signal an error instead.
+While a context waits for a child to stop, calls from that child to the
+context return [`(:deadlock processes)`](processes.md#deadlocks) at once,
+whether the child makes them while stopping, for example from `dispose`, or
+was already waiting on an unanswered one. A call made through another
+service that waits on the context is broken the same way. Context functions
+such as `children` signal an error instead of returning a status.
+
+A child can't unmount or reload itself: both would deadlock, so `unmount`
+and `reload` signal an error instead.
 
 ## Nesting
 

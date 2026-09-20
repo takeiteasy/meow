@@ -99,6 +99,14 @@ that call's status, or its reply if it has none. An empty route is :done."
     (is (< (- (now) start) 1))
     (mapc #'stop-and-join (list a b c))))
 
+(test a-settled-call-is-not-handled
+  (let* ((s (test-server))
+         (pending (meow::%make-pending-call s)))
+    (meow::%settle (meow::pending-call-cell pending) :deadlock '())
+    (meow::%send-call pending '(:push 1))
+    (is (null (meow:call s :casts)) "the refused message never ran")
+    (stop-and-join s)))
+
 (test answered-caller-can-call-back
   (let* ((b nil)
          (results '())

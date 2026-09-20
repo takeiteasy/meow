@@ -325,6 +325,117 @@
           "the context no longer waits on the child")
       (stop-and-join ctx))))
 
+;;; A child stopped while a call of its own to the context is unanswered
+
+(meow:defservice context-waiter (reporting) ())
+
+(meow:defservice relay (context-waiter) ())
+
+(defun own-context (service)
+  (meow:service-process (meow:service-context service)))
+
+(defmethod meow:handle ((s context-waiter) message)
+  (ecase (first message)
+    (:call-context
+     (report s :called (nth-value 1 (meow:call (own-context s) :ping
+                                               :timeout 5))))
+    (:call-through
+     (report s :called (nth-value 1 (meow:call (second message)
+                                               '(:call-context)
+                                               :timeout 5))))
+    (:unmount-self
+     (report s :refused (handler-case (meow:unmount (own-context s)
+                                                    (meow:service-name s))
+                          (error (e) e))))
+    (:reload-self
+     (report s :refused (handler-case (meow:reload (own-context s)
+                                                   (meow:service-name s))
+                          (error (e) e))))))
+
+(defun waits-on (process target)
+  (bt2:with-lock-held (meow::*%wait-lock*)
+    (meow::%wait-path process target)))
+
+(defun messages-until (predicate &optional (timeout 3))
+  "Collect messages until one matches PREDICATE or TIMEOUT seconds pass."
+  (loop with deadline = (+ (now) timeout)
+        for (message received) = (multiple-value-list
+                                  (meow:receive :timeout (max 0 (- deadline (now)))))
+        while received
+        collect message into messages
+        until (funcall predicate message)
+        finally (return messages)))
+
+(defun unmount-report (name)
+  (lambda (message) (equal message (list :unmounted name t))))
+
+(defun busy-context (context)
+  "Leave CONTEXT stopping a stubborn child, so requests queue behind it."
+  (meow:mount context 'stubborn)
+  (meow:spawn (lambda () (meow:unmount context 'stubborn)))
+  (is-true (eventually (lambda () (waits-on context (meow:lookup 'stubborn))))))
+
+(defun unmount-elsewhere (context name)
+  "Have another process unmount NAME, reporting (:unmounted name result).
+Returns once the request is queued at CONTEXT."
+  (let* ((tester (meow:self))
+         (process (meow:spawn
+                   (lambda ()
+                     (meow:send tester (list :unmounted name
+                                             (meow:unmount context name)))))))
+    (is-true (eventually (lambda () (waits-on process context))))
+    process))
+
+(test stopping-a-child-breaks-its-queued-call-to-the-context
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'context-waiter :reporter (meow:self)
+                                              :shutdown 5)))
+      (busy-context ctx)
+      (unmount-elsewhere ctx 'context-waiter)
+      (meow:cast p '(:call-context))
+      (is-true (eventually (lambda () (waits-on p ctx))))
+      (let* ((start (now))
+             (messages (messages-until (unmount-report 'context-waiter))))
+        (is (has '(:unmounted context-waiter t) messages))
+        (is (< (- (now) start) 1.5))
+        (is (eq :shutdown (meow:process-exit-reason p)))
+        (is (has (list 'context-waiter :called (list :deadlock (list ctx p)))
+                 messages)))
+      (stop-and-join ctx))))
+
+(test stopping-a-child-breaks-a-wait-that-runs-through-another-child
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (q (meow:mount ctx 'relay :reporter (meow:self)))
+           (p (meow:mount ctx 'context-waiter :reporter (meow:self)
+                                              :shutdown 5)))
+      (busy-context ctx)
+      (unmount-elsewhere ctx 'context-waiter)
+      (meow:cast p (list :call-through q))
+      (is-true (eventually (lambda () (waits-on p ctx))))
+      (let* ((start (now))
+             (messages (messages-until (unmount-report 'context-waiter))))
+        (is (has '(:unmounted context-waiter t) messages))
+        (is (< (- (now) start) 1.5))
+        (is (eq :shutdown (meow:process-exit-reason p)))
+        (is (has (list 'relay :called (list :deadlock (list ctx p q)))
+                 messages)))
+      (stop-and-join ctx))))
+
+(test unmount-and-reload-from-the-child-itself-are-refused
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'context-waiter :reporter (meow:self))))
+      (dolist (message '((:unmount-self) (:reload-self)))
+        (meow:cast p message)
+        (destructuring-bind (name event value) (meow:receive :timeout 1)
+          (is (equal '(context-waiter :refused) (list name event)))
+          (is (typep value 'error))))
+      (is (eq p (child-process ctx 'context-waiter)) "still mounted")
+      (is (meow:process-alive-p p))
+      (stop-and-join ctx))))
+
 (test reload-kills-a-stuck-child
   (with-fresh-registry ()
     (let* ((ctx (start-context))

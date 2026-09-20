@@ -98,9 +98,13 @@ BACKOFF and BACKOFF-MAX override the context's :restart-delay and
   "Stop CHILD of CONTEXT, a name or process, without restarting it, waiting
 up to TIMEOUT seconds (default its shutdown, :infinity for no limit) for
 it to exit before killing it. Returns t, :killed, :timeout if it is still running after being killed,
-or nil if CHILD is not mounted."
+or nil if CHILD is not mounted. A child can't unmount itself: that would
+deadlock, so an error is signalled instead."
   (check-type timeout (or null %shutdown-type))
-  (%context-call context (list '%unmount child timeout)))
+  (let ((result (%context-call context (list '%unmount child timeout))))
+    (if (typep result 'error)
+        (error result)
+        result)))
 
 (defun children (context)
   "A plist (:name :process :restart :state :restart-in) for each child, in
@@ -114,7 +118,8 @@ reinitialize its instance with the initargs it was mounted with and start it
 again. Returns the new process, or nil if CHILD is not mounted. If it fails
 to stop within TIMEOUT seconds (default its shutdown, :infinity for no
 limit), which signals
-STOP-TIMEOUT, or to start, it is removed and the error is signalled."
+STOP-TIMEOUT, or to start, it is removed and the error is signalled. A child
+can't reload itself: that would deadlock, so an error is signalled instead."
   (check-type timeout (or null %shutdown-type))
   (a:when-let ((result (%context-call context (list '%reload child timeout))))
     (destructuring-bind (status value) result
@@ -292,9 +297,16 @@ of CONTEXT and its ancestors. Nearer contexts and later entries win."
           :key (if (typep target 'process) #'child-process #'child-name)
           :test #'equal)))
 
+(defun %self-stop-error (verb process)
+  (make-condition 'simple-error
+                  :format-control "~a ~a from itself would deadlock"
+                  :format-arguments (list verb process)))
+
 (defun %unmount (context target timeout)
   (with-slots (children) context
     (a:when-let ((child (%find-child context target)))
+      (when (eq (child-process child) *%caller*)
+        (return-from %unmount (%self-stop-error "Unmounting" *%caller*)))
       (a:deletef children child)
       (or (%stop-and-wait (child-process child)
                           (or timeout (child-shutdown child)))
@@ -317,7 +329,9 @@ of CONTEXT and its ancestors. Nearer contexts and later entries win."
 
 (defun %reload (context target timeout)
   (a:when-let ((child (%find-child context target)))
-    (%reload-child context child timeout)))
+    (if (eq (child-process child) *%caller*)
+        (list :error (%self-stop-error "Reloading" *%caller*))
+        (%reload-child context child timeout))))
 
 (defun %set-mount-options (child options)
   (loop for (key value) on options by #'cddr

@@ -290,8 +290,9 @@ it signalled."
 (defmethod %dispatch ((service service) message)
   (multiple-value-bind (tag a b) (%message-parts message)
     (case tag
-      (:call (when (reply-cell-p a)
-               (reply a (%handle service b))))
+      (:call (when (and (reply-cell-p a) (%cell-pending-p a))
+               (let ((*%caller* (reply-cell-caller a)))
+                 (reply a (%handle service b)))))
       (:cast (%handle service a))
       (:stop (exit a))
       (:registered (%dep-up service a b))

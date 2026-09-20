@@ -4,7 +4,11 @@
   (lock (bt2:make-lock :name "reply") :read-only t)
   (cv (bt2:make-condition-variable) :read-only t)
   (state :pending)
-  (value nil))
+  (value nil)
+  (caller nil))
+
+(defvar *%caller* nil
+  "The process whose call is being handled, if any.")
 
 (defun %settle (cell state value)
   "Fill CELL once; later settlements are ignored."
@@ -30,7 +34,8 @@ If it has already exited, nothing is sent and the cell is settled as :down."
          (hook (add-exit-hook process (lambda (process reason)
                                         (declare (ignore process))
                                         (%settle cell :down reason)))))
-    (setf (pending-call-hook pending) hook)
+    (setf (reply-cell-caller cell) (self)
+          (pending-call-hook pending) hook)
     (if hook
         (send process (list :call cell message))
         (%settle cell :down (process-exit-reason process)))
@@ -47,10 +52,12 @@ If it has already exited, nothing is sent and the cell is settled as :down."
 (defvar *%waits* (make-hash-table :test 'eq)
   "Each waiting process's pending calls.")
 
+(defun %cell-pending-p (cell)
+  (bt2:with-lock-held ((reply-cell-lock cell))
+    (eq (reply-cell-state cell) :pending)))
+
 (defun %pending-p (pending)
-  (let ((cell (pending-call-cell pending)))
-    (bt2:with-lock-held ((reply-cell-lock cell))
-      (eq (reply-cell-state cell) :pending))))
+  (%cell-pending-p (pending-call-cell pending)))
 
 (defun %wait-path (from to)
   "The processes from FROM to TO along unanswered calls, or nil. Call with
@@ -99,11 +106,27 @@ processes instead, and nil stays nil."
           (setf (gethash self *%waits*) left)
           (remhash self *%waits*))))))
 
+(defun %break-waits (process self)
+  "Settle as deadlocks the calls that make PROCESS wait on SELF, which is
+about to wait on PROCESS and so can't answer them. Call with the wait lock
+held."
+  (unless (eq process self)
+    (loop for path = (%wait-path process self)
+          while path
+          do (let ((waiter (car (last path 2))))
+               (dolist (pending (gethash waiter *%waits*))
+                 (when (and (eq (pending-call-process pending) self)
+                            (%pending-p pending))
+                   (%settle (pending-call-cell pending) :deadlock
+                            (cons self (butlast path)))))))))
+
 (defun %call-waiting-on (process thunk)
-  "Call THUNK with the current process recorded as waiting on PROCESS."
+  "Call THUNK with the current process recorded as waiting on PROCESS. Calls
+that leave PROCESS waiting on it are settled as deadlocks first."
   (let ((waits (list (%make-pending-call process))))
     (a:when-let ((self (self)))
       (bt2:with-lock-held (*%wait-lock*)
+        (%break-waits process self)
         (%add-waits self waits)))
     (unwind-protect (funcall thunk)
       (%end-calls waits))))
@@ -119,6 +142,7 @@ processes instead, and nil stays nil."
       (:value (values (reply-cell-value cell) nil))
       (:down (values nil (list :down (reply-cell-value cell))))
       (:error (values nil (list :error (reply-cell-value cell))))
+      (:deadlock (values nil (list :deadlock (reply-cell-value cell))))
       (:pending (values nil :timeout)))))
 
 (defun call (process message &key (timeout 5))
@@ -129,7 +153,8 @@ waits forever), (values nil (:down reason)) if PROCESS exits first, or
 PROCESS keeps running and its eventual reply is discarded. If PROCESS is
 already waiting, directly or through others, on the caller, nothing is sent
 and it returns (values nil (:deadlock processes)), the cycle from PROCESS to
-the caller."
+the caller. A call that is waiting when PROCESS starts waiting on the caller
+is broken the same way."
   (let ((calls '()))
     (unwind-protect
          (let ((pending (first (setf calls (%begin-calls (list process))))))
@@ -164,7 +189,7 @@ reply is HANDLER's return value. Malformed messages are dropped."
   (spawn (lambda ()
            (loop (multiple-value-bind (tag a b) (%message-parts (receive))
                    (case tag
-                     (:call (when (reply-cell-p a)
+                     (:call (when (and (reply-cell-p a) (%cell-pending-p a))
                               (reply a (funcall handler b))))
                      (:cast (funcall handler a))
                      (:stop (exit a))))))
