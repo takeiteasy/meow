@@ -30,6 +30,20 @@ for every `.lisp` file under it.
 A file counts as changed when its contents change, not when its timestamp
 moves, so saving a file unchanged reloads nothing.
 
+## How it watches
+
+Where the platform has native filesystem events — kqueue on macOS — the
+watcher waits on them and scans as soon as a watched file, or the directory
+holding it, is written. Elsewhere it scans every `:interval` seconds.
+
+`:events` picks: `:auto` uses events where they exist, `t` requires them
+and is an [invalid config](config.md#invalid-config) where they don't, and
+nil always polls.
+
+A save arrives as several events, so the watcher waits a moment for the
+rest before scanning. A file caught mid-write fails to load, which is
+reported as a warning, and the events that follow scan it again.
+
 ## What it reloads
 
 A changed file is recompiled and loaded, then the children holding the
@@ -57,7 +71,8 @@ After a scan that reloaded something, the watcher emits
 | Initarg | Default | |
 |---|---|---|
 | `:files` | every recorded `defservice` source | Files and directories to watch. |
-| `:interval` | `1` | Seconds between scans. |
+| `:interval` | `1` | Seconds between scans, when polling. |
+| `:events` | `:auto` | Use native filesystem events: `:auto`, `t` or nil. |
 | `:compile` | `t` | Compile before loading, rather than loading the source. |
 
 ## Scanning on demand

@@ -1,14 +1,27 @@
 (in-package #:meow)
 
-;;; TODO: reads every watched file each interval; use native filesystem
-;;; events (kqueue, inotify) if watch sets grow.
+(defconstant +watch-debounce+ 0.05
+  "Seconds an event waits for the ones that follow it. A single save
+arrives as several events, the first of them on a half-written file.")
+
+(defun %watcher-problems (watcher)
+  (with-slots (events) watcher
+    (cond ((not (member events '(:auto t nil)))
+           (list (format nil "events: ~s is not :auto, t or nil" events)))
+          ((and (eq events t) (not (%watch-supported-p)))
+           (list "events: this platform has no native filesystem events")))))
 
 (defservice watcher ()
   ((files :initarg :files :initform '() :type list)
    (interval :initarg :interval :initform 1 :type (real 0))
    (compilep :initarg :compile :initform t :type boolean)
+   (events :initarg :events :initform :auto)
    (stamps :initform (make-hash-table :test #'equal))
-   (forms :initform (make-hash-table :test #'equal))))
+   (forms :initform (make-hash-table :test #'equal))
+   (watched :initform nil)
+   (release :initform nil)
+   (pending :initform nil))
+  (:validate %watcher-problems))
 
 (defun %expand-source (path)
   "PATH itself, or every .lisp file under it if it names a directory."
@@ -178,14 +191,54 @@ Returns the names reloaded."
       (emit watcher :meow/reloaded (mapcar #'car touched) names))
     names))
 
+(defun %arm (watcher)
+  "Watch the current file set for native events, replacing any earlier
+watch. Each event schedules a scan on WATCHER's process. Returns t, or nil
+if the watch cannot be opened."
+  (with-slots (watched release) watcher
+    (let* ((files (%watched-files watcher))
+           (process (service-process watcher))
+           (watch (%watch files (lambda () (cast process :changed)))))
+      (when watch
+        (a:when-let ((previous (shiftf release nil)))
+          (funcall previous))
+        (setf watched (mapcar #'namestring files)
+              release (effect watcher (lambda () watch) :label :watch))
+        t))))
+
+(defun %rearm (watcher)
+  "Watch again once the file set has moved, so a source the scan added is
+watched too."
+  (with-slots (watched release) watcher
+    (when (and release
+               (not (equal watched (mapcar #'namestring
+                                           (%watched-files watcher)))))
+      (%arm watcher))))
+
+(defun %tick (watcher)
+  (prog1 (%scan watcher)
+    (%rearm watcher)))
+
+(defun %debounce (watcher)
+  "Scan shortly, replacing a scan already scheduled."
+  (with-slots (pending) watcher
+    (a:when-let ((cancel (shiftf pending nil)))
+      (funcall cancel))
+    (setf pending (after watcher +watch-debounce+
+                         (lambda ()
+                           (setf pending nil)
+                           (%tick watcher))
+                         :label :watch))))
+
 (defmethod ready ((watcher watcher))
   (dolist (file (%changed-files watcher))
     (%file-classes watcher file))
-  (repeat watcher (slot-value watcher 'interval)
-          (lambda () (%scan watcher))
-          :label :watch))
+  (with-slots (events interval) watcher
+    (unless (and events (%watch-supported-p) (%arm watcher))
+      (repeat watcher interval (lambda () (%tick watcher)) :label :watch))))
 
 (defmethod handle ((watcher watcher) message)
-  (if (eq message :scan)
-      (%scan watcher)
-      (call-next-method)))
+  (case message
+    (:scan (%tick watcher))
+    (:changed (%debounce watcher))
+    (t (call-next-method))))

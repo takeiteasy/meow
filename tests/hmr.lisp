@@ -44,7 +44,7 @@ CLASSES, so one test's sources aren't watched by the next."
 rather than compiling them. The defaults go last, since the first of a
 repeated initarg wins."
   (apply #'meow:mount context 'meow:watcher
-         (append initargs '(:interval 10 :compile nil))))
+         (append initargs '(:interval 10 :compile nil :events nil))))
 
 (defun watched-process (context name)
   (getf (find name (meow:children context)
@@ -120,7 +120,7 @@ repeated initarg wins."
       (with-fresh-registry ()
         (let* ((ctx (start-context))
                (w (meow:mount ctx 'own-watcher :interval 10 :compile nil
-                                               :files (list path))))
+                                               :events nil :files (list path))))
           (write-source 'own-watcher
                         '(meow:defservice own-watcher (meow:watcher)
                           ((version :initform 2))))
@@ -178,7 +178,7 @@ repeated initarg wins."
       (load-source path)
       (with-fresh-registry ()
         (let ((ctx (start-context)))
-          (meow:mount ctx 'meow:watcher :files (list path)
+          (meow:mount ctx 'meow:watcher :files (list path) :events nil
                                         :interval 0.05 :compile nil)
           (let ((p (meow:mount ctx 'polled)))
             (multiple-value-call #'write-source 'polled (answering 'polled 2))
@@ -222,3 +222,29 @@ repeated initarg wins."
           (is (equal '(gamma) (meow:call w :scan)))
           (is (not (eq p (watched-process ctx 'gamma))))
           (stop-and-join ctx))))))
+
+(test native-events-scan-without-waiting-for-the-poll
+  (if (not (meow::%watch-supported-p))
+      (skip "this platform has no native filesystem events")
+      (with-sources (evented)
+        (let ((path (multiple-value-call #'write-source
+                      'evented (answering 'evented 1))))
+          (load-source path)
+          (with-fresh-registry ()
+            (let ((ctx (start-context)))
+              (meow:mount ctx 'meow:watcher :files (list path) :events t
+                                            :interval 60 :compile nil)
+              (let ((p (meow:mount ctx 'evented)))
+                (multiple-value-call #'write-source
+                  'evented (answering 'evented 2))
+                ;; A save arrives as several events, so the file may be
+                ;; read while it is still being written; the events that
+                ;; follow scan it again.
+                (is-true (eventually
+                          (lambda ()
+                            (let ((new (watched-process ctx 'evented)))
+                              (and new (not (eq new p))
+                                   (eql 2 (meow:call new :ask)))))
+                          10)
+                         "the write was seen without a poll"))
+              (stop-and-join ctx))))))) 
