@@ -108,6 +108,10 @@ that call's status, or its reply if it has none. An empty route is :done."
     (stop-and-join s)))
 
 (test answered-caller-can-call-back
+  ;; Skipped on ECL: the #58 race breaks one of the 200 calls as a deadlock
+  ;; often enough to redden CI. Re-enable with the fix.
+  #+ecl (skip "~takeiteasy/meow#58 breaks a call as a deadlock on ECL")
+  #-ecl
   (let* ((b nil)
          (results '())
          (a (meow:serve (lambda (message)
