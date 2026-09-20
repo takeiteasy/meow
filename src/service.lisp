@@ -216,6 +216,9 @@ resource, is its disposer. Returns the resource and the release function."
                              :label ,label)))
        (values ,resource ,release))))
 
+;;; TODO: scans every effect per scope release, and every effect carries the
+;;; scope stack it was acquired in; key cells by scope token if scope counts
+;;; grow.
 (defun %release-scope (service token)
   "Release the effects SERVICE acquired in scope TOKEN, newest first."
   (%require-own-process service)
