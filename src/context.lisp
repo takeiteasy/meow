@@ -56,7 +56,7 @@
 (defstruct (child (:constructor make-child (class initargs restart shutdown
                                             backoff backoff-max)))
   class initargs restart shutdown backoff backoff-max
-  name process service config (restarts '()) pending)
+  name process service config (restarts '()) pending cancel)
 
 (define-condition stop-timeout (error)
   ((process :initarg :process :reader stop-timeout-process)
@@ -190,9 +190,9 @@ PROCESS to the waiting process meanwhile return (:deadlock ...)."
          (process (start-service service
                                  :registry (context-registry context)
                                  :debug (slot-value context 'debug))))
+    (%cancel-pending child)
     (setf (child-name child) (service-name service)
-          (child-process child) process
-          (child-pending child) nil)
+          (child-process child) process)
     ;; :up so an observer anywhere above CONTEXT sees the whole subtree, as
     ;; well as one mounted beside the child.
     (flet ((announce (event &rest args)
@@ -315,6 +315,7 @@ of CONTEXT and its ancestors. Nearer contexts and later entries win."
     (a:when-let ((child (%find-child context target)))
       (when (and *%caller* (eq (child-process child) *%caller*))
         (return-from %unmount (%self-stop-error "Unmounting" *%caller*)))
+      (%cancel-pending child)
       (a:deletef children child)
       (or (%stop-and-wait (child-process child)
                           (or timeout (child-shutdown child)))
@@ -508,17 +509,21 @@ delay, doubled for each earlier restart within period up to the max if set."
           (min max (* base (expt 2 (1- count))))
           base))))
 
-;;; TODO: one sleeping thread per pending restart, which outlives a stopped
-;;; context; queue it on the shared timer (%TIMER-ADD) instead if restart
-;;; counts grow.
-(defun %schedule-start (child delay)
-  "Cast %DELAYED-START for CHILD to the current process after DELAY seconds."
-  (let ((self (self))
-        (token (setf (child-pending child) (list (+ (%now) delay)))))
-    (bt2:make-thread (lambda ()
-                       (sleep delay)
-                       (cast self (list '%delayed-start child token)))
-                     :name "meow restart delay")))
+(defun %cancel-pending (child)
+  "Drop CHILD's pending restart, if it has one."
+  (setf (child-pending child) nil)
+  (a:when-let ((cancel (shiftf (child-cancel child) nil)))
+    (funcall cancel)))
+
+(defun %schedule-start (context child delay)
+  "Start CHILD on CONTEXT's process after DELAY seconds. The wait is an
+effect of CONTEXT, so a stopped context drops it."
+  (%cancel-pending child)
+  (let ((token (setf (child-pending child) (list (+ (%now) delay)))))
+    (setf (child-cancel child)
+          (after context delay
+                 (lambda () (%delayed-start context child token))
+                 :label (list :restart (child-name child))))))
 
 (defun %try-start (context child)
   (handler-case (%start-child context child)
@@ -529,7 +534,7 @@ delay, doubled for each earlier restart within period up to the max if set."
   (loop (%note-restart context)
         (let ((delay (%restart-delay context child)))
           (unless (zerop delay)
-            (return (%schedule-start child delay)))
+            (return (%schedule-start context child delay)))
           (when (%try-start context child)
             (return)))))
 
@@ -547,7 +552,8 @@ delay, doubled for each earlier restart within period up to the max if set."
                (eq process (child-process child)))
       (if (%restart-p (child-restart child) reason)
           (%restart-child context child)
-          (a:deletef children child)))))
+          (progn (%cancel-pending child)
+                 (a:deletef children child))))))
 
 (defun %child-info (child)
   (let ((pending (child-pending child)))
@@ -572,7 +578,6 @@ delay, doubled for each earlier restart within period up to the max if set."
       (%intercept (%intercept context a b))
       (%refresh (%warn-errors context (%refresh context)))
       (%child-exit (%child-exit context a b c))
-      (%delayed-start (%delayed-start context a b))
       (t (call-next-method)))))
 
 (defmethod %teardown :before ((context context) reason)

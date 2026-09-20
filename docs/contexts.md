@@ -109,6 +109,10 @@ nil; use `process-alive-p` to check liveness, since an exit may not have
 been handled yet. A child unmounted or reloaded in the meantime isn't
 restarted.
 
+The wait is a [timer](timers.md) effect of the context, labelled
+`(:restart name)`, so `(effects ctx)` shows the restarts it is sitting on
+and a stopped context drops them.
+
 ## Intensity
 
 A context allows up to `:intensity` restarts (default 5) within

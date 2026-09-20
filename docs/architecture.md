@@ -44,7 +44,7 @@ application-specific code.
   source file changes.
 - A [timer](timers.md) runs a function on its service's process later, once
   or on a period, and is cancelled when the service stops. One thread
-  schedules them all.
+  schedules them all, including a context's restart backoff.
 - An [event](events.md) listener runs on its own service's process and is
   removed when that service stops. Events reach a whole registry or part of
   a context tree.

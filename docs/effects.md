@@ -88,7 +88,8 @@ held. `target` is a service or its process; from another process it is a
 
 [Listeners](events.md) are labelled `(:on event)` and
 [timers](timers.md) `(:after seconds)` or `(:repeat seconds)`, unless they
-are given a `:label` of their own.
+are given a `:label` of their own. A context waiting out a
+[restart delay](contexts.md#backoff) holds one labelled `(:restart name)`.
 
 ## Rules
 

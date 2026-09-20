@@ -611,6 +611,40 @@ killed if :infinity were ignored."
         (is-true p2))
       (stop-and-join ctx))))
 
+(test a-pending-restart-is-an-effect-of-the-context
+  (with-fresh-registry ()
+    (let* ((ctx (start-context :restart-delay 0.3))
+           (p (meow:mount ctx 'provider :restart :permanent)))
+      (is (null (meow:effects ctx)))
+      (meow:stop p :killed)
+      (is-true (eventually (lambda ()
+                             (equal '((:restart provider))
+                                    (meow:effects ctx)))))
+      (is-true (restarted ctx 'provider p))
+      (is (null (meow:effects ctx)) "it goes when the child starts")
+      (stop-and-join ctx))))
+
+(test unmounting-drops-the-pending-restart-rather-than-waiting-it-out
+  (with-fresh-registry ()
+    (let* ((ctx (start-context :restart-delay 30))
+           (p (meow:mount ctx 'provider :restart :permanent)))
+      (meow:stop p :killed)
+      (is-true (eventually (lambda () (meow:effects ctx))))
+      (meow:unmount ctx 'provider)
+      (is (null (meow:effects ctx)))
+      (stop-and-join ctx))))
+
+(test stopping-a-context-drops-its-pending-restarts
+  (with-fresh-registry ()
+    (let* ((ctx (start-context :restart-delay 30))
+           (p (meow:mount ctx 'provider :restart :permanent)))
+      (meow:stop p :killed)
+      (is-true (eventually (lambda () (meow:effects ctx))))
+      (stop-and-join ctx)
+      ;; The wait would otherwise outlive the context by its whole delay.
+      (is-true (eventually (lambda () (null meow::*%timer-thread*))))
+      (is (null meow::*%timer-cells*)))))
+
 (test unmount-cancels-a-pending-restart
   (with-fresh-registry ()
     (let* ((ctx (start-context :restart-delay 0.1))

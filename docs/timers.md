@@ -51,7 +51,8 @@ says otherwise.
 `after` and `repeat` can only be called from the service's own process, and
 signal an error once it is stopping, as `effect` does.
 
-One thread runs every timer in the image. It only enqueues: the function
-itself runs on the service's process, so cancelling a timer cannot race the
-call. The thread starts with the first pending timer and exits when the last
-one is gone.
+One thread runs every timer in the image, including the delays a
+[context](contexts.md#backoff) waits out before restarting a child. It only
+enqueues: the function itself runs on the service's process, so cancelling a
+timer cannot race the call. The thread starts with the first pending timer
+and exits when the last one is gone.
