@@ -11,7 +11,7 @@ child.
 (mount *app* 'consumer :reporter *reporter*)
 (children *app*)
 ; => ((:name provider :process #<process> :restart :permanent
-;     :state :running :restart-in nil)
+;     :state :running :restart-in nil :class provider)
 ;     (:name consumer ...))
 (unmount *app* 'consumer)
 (stop *app*)

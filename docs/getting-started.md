@@ -12,8 +12,17 @@ ln -s ~/git/meow ~/quicklisp/local-projects/meow
 (ql:quickload :meow)
 ```
 
-Dependencies: `bordeaux-threads` (bt2 API), `alexandria` and
-`closer-mop`.
+Dependencies: `bordeaux-threads` (bt2 API), `alexandria`, `closer-mop` and
+[`trivial-high-precision-timer`](https://github.com/takeiteasy/trivial-high-precision-timer),
+which is not in a Quicklisp dist and needs a local project of its own:
+
+```sh
+git clone https://github.com/takeiteasy/trivial-high-precision-timer \
+    ~/quicklisp/local-projects/trivial-high-precision-timer
+```
+
+The [logger](logger.md) and the source [watcher](hmr.md) load separately,
+as `meow/logger` and `meow/hmr`.
 
 ## Tests
 
@@ -22,6 +31,8 @@ The suite uses FiveAM and runs through ASDF:
 ```lisp
 (asdf:test-system :meow)
 ```
+
+Each subsystem has a suite of its own: `meow/logger` and `meow/hmr`.
 
 From the shell, `tests/test.sh` runs it on `sbcl` (default), `ecl` or
 `ccl` and exits non-zero on failure:
