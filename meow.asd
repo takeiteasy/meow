@@ -5,7 +5,6 @@
   :version "0.1.0"
   :depends-on ("bordeaux-threads" "alexandria" "closer-mop"
                "trivial-high-precision-timer")
-  :pathname "src/"
   :serial t
   :components ((:file "package")
                (:file "clock")
@@ -29,7 +28,6 @@
   :license "GPLv3"
   :version "0.1.0"
   :depends-on ("meow")
-  :pathname "src/"
   :components ((:file "logger"))
   :in-order-to ((test-op (test-op "meow/logger/tests"))))
 
@@ -39,7 +37,6 @@
   :license "GPLv3"
   :version "0.1.0"
   :depends-on ("meow" "trivial-wait/notify")
-  :pathname "src/"
   :components ((:file "hmr"))
   :in-order-to ((test-op (test-op "meow/hmr/tests"))))
 
