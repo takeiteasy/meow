@@ -7,7 +7,8 @@
   ((files :initarg :files :initform '() :type list)
    (interval :initarg :interval :initform 1 :type (real 0))
    (compilep :initarg :compile :initform t :type boolean)
-   (stamps :initform (make-hash-table :test #'equal))))
+   (stamps :initform (make-hash-table :test #'equal))
+   (forms :initform (make-hash-table :test #'equal))))
 
 (defun %expand-source (path)
   "PATH itself, or every .lisp file under it if it names a directory."
@@ -60,15 +61,79 @@ stamps. Every file is new on the first call."
       (warn "Loading ~a failed: ~a" file e)
       nil)))
 
-;;; TODO: a changed file leaves every child whose class it defines, or that
-;;; inherits from one, stale; track per-class redefinition if that reloads
-;;; more than it needs to.
 (defun %source-classes (file)
   "The service classes recorded as defined in FILE."
   (loop for class being the hash-keys of *%service-sources*
           using (hash-value source)
         when (equal (%truename source) file)
           collect class))
+
+(defun %read-forms (file)
+  "The source text of each top-level form in FILE, paired with the form, or
+nil if it cannot be read. IN-PACKAGE is followed as the read goes, so each
+form reads in the package its file selected."
+  (ignore-errors
+   (let ((text (with-open-file (in file)
+                 (let* ((buffer (make-string (file-length in)))
+                        (count (read-sequence buffer in)))
+                   (subseq buffer 0 count)))))
+     (with-input-from-string (stream text)
+       (let ((*read-eval* nil)
+             (*package* *package*)
+             (eof '#:eof))
+         (loop for start = (file-position stream)
+               for form = (read-preserving-whitespace stream nil eof)
+               until (eq form eof)
+               when (and (consp form) (eq (first form) 'in-package))
+                 do (a:when-let ((package (find-package (second form))))
+                      (setf *package* package))
+               collect (cons (string-trim '(#\Space #\Tab #\Newline #\Return)
+                                          (subseq text start
+                                                  (file-position stream)))
+                             form)))))))
+
+(defun %method-classes (form)
+  "The classes the lambda list of a DEFMETHOD FORM specialises on."
+  (let ((tail (cddr form)))
+    (loop until (listp (first tail))
+          do (pop tail))
+    (loop for parameter in (first tail)
+          until (member parameter lambda-list-keywords)
+          when (and (consp parameter) (symbolp (second parameter))
+                    (find-class (second parameter) nil))
+            collect (second parameter))))
+
+(defun %form-classes (form)
+  "The classes FORM defines or specialises on, or :ALL when what it affects
+cannot be told from the form alone."
+  (case (and (consp form) (first form))
+    ((defservice defclass) (if (find-class (second form) nil)
+                               (list (second form))
+                               :all))
+    (defmethod (or (ignore-errors (%method-classes form)) :all))
+    (t :all)))
+
+(defun %file-classes (watcher file)
+  "The classes the change to FILE touched, recording its forms for the next
+scan. :ALL stands for every class FILE defines, which is what a form that
+cannot be attributed, or a file that cannot be read, leaves stale."
+  (with-slots (forms) watcher
+    (let* ((key (namestring file))
+           (new (%read-forms file))
+           (old (shiftf (gethash key forms) new)))
+      (if (null new)
+          :all
+          (loop with touched = (nconc (set-difference new old :key #'car
+                                                              :test #'string=)
+                                      (set-difference old new :key #'car
+                                                              :test #'string=))
+                with classes = '()
+                for (nil . form) in touched
+                for attributed = (%form-classes form)
+                when (eq attributed :all)
+                  return :all
+                do (setf classes (union attributed classes))
+                finally (return classes))))))
 
 (defun %stale-p (class changed)
   (some (lambda (redefined) (subtypep class redefined)) changed))
@@ -96,20 +161,26 @@ subtree is left alone. Returns the names reloaded."
 (defun %scan (watcher)
   "Reload the watched files that changed and the children they leave stale.
 Returns the names reloaded."
-  (a:when-let* ((changed (remove-if-not (lambda (file)
-                                          (%load-source watcher file))
-                                        (%changed-files watcher)))
+  (a:when-let* ((touched (loop for file in (%changed-files watcher)
+                               for classes = (%file-classes watcher file)
+                               when (%load-source watcher file)
+                                 collect (cons file classes)))
                 ;; Read after loading, so a service the change added counts.
-                (classes (remove-duplicates (mapcan #'%source-classes changed)))
+                (classes (remove-duplicates
+                          (loop for (file . attributed) in touched
+                                append (if (eq attributed :all)
+                                           (%source-classes file)
+                                           attributed))))
                 (context (service-context watcher))
                 (names (%reload-under watcher (service-process context)
                                       classes)))
     (let ((*event-scope* :up))
-      (emit watcher :meow/reloaded changed names))
+      (emit watcher :meow/reloaded (mapcar #'car touched) names))
     names))
 
 (defmethod ready ((watcher watcher))
-  (%changed-files watcher)
+  (dolist (file (%changed-files watcher))
+    (%file-classes watcher file))
   (repeat watcher (slot-value watcher 'interval)
           (lambda () (%scan watcher))
           :label :watch))

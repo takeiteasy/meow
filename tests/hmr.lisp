@@ -189,3 +189,36 @@ repeated initarg wins."
                       10))
             (is (eql 2 (meow:call (watched-process ctx 'polled) :ask))))
           (stop-and-join ctx))))))
+
+(test only-the-classes-a-change-touched-are-reloaded
+  (with-sources (alpha beta)
+    (let ((path (multiple-value-call #'write-source 'pair
+                  (answering 'alpha 1) (answering 'beta 1))))
+      (load-source path)
+      (with-fresh-registry ()
+        (let* ((ctx (start-context))
+               (w (watch ctx :files (list path)))
+               (a (meow:mount ctx 'alpha))
+               (b (meow:mount ctx 'beta)))
+          (multiple-value-call #'write-source 'pair
+            (answering 'alpha 1) (answering 'beta 2))
+          (is (equal '(beta) (meow:call w :scan)))
+          (is (eq a (watched-process ctx 'alpha)) "alpha did not move")
+          (is (not (eq b (watched-process ctx 'beta))))
+          (is (eql 2 (meow:call (watched-process ctx 'beta) :ask)))
+          (stop-and-join ctx))))))
+
+(test a-change-that-cannot-be-attributed-reloads-the-whole-file
+  (with-sources (gamma)
+    (let ((path (multiple-value-call #'write-source 'helper
+                  '(defun helper-value () 1) (answering 'gamma 1))))
+      (load-source path)
+      (with-fresh-registry ()
+        (let* ((ctx (start-context))
+               (w (watch ctx :files (list path)))
+               (p (meow:mount ctx 'gamma)))
+          (multiple-value-call #'write-source 'helper
+            '(defun helper-value () 2) (answering 'gamma 1))
+          (is (equal '(gamma) (meow:call w :scan)))
+          (is (not (eq p (watched-process ctx 'gamma))))
+          (stop-and-join ctx))))))

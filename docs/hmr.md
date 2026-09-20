@@ -32,8 +32,13 @@ moves, so saving a file unchanged reloads nothing.
 
 ## What it reloads
 
-A changed file is recompiled and loaded, then every child whose class that
-file defines, or that inherits from one, is reloaded. Contexts are reloaded
+A changed file is recompiled and loaded, then the children holding the
+classes the change touched are reloaded, along with those whose class
+inherits from one. A class is touched by a `defservice` or `defclass` whose
+source text moved, and by a changed `defmethod` that specialises on it. A
+change that can't be attributed to a class, such as an edited function, or
+a file that can't be read as forms, leaves every class that file defines
+stale. Contexts are reloaded
 before what is mounted under them; reloading a context remounts its
 [declared children](contexts.md#declared-children), so its subtree is left
 alone.
