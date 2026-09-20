@@ -128,11 +128,11 @@ The `meow/` prefix is reserved for events the core emits.
 `ready` or `handle`.
 
 `ready` runs again after a lost dependency comes back, and effects are not
-unwound in between, so a listener registered there is registered again. A
-service with dependencies should register its listeners in an
-[effect scope](effects.md#scopes) and release it in `dep-down`, as a
-[plugin](plugins.md) does, or keep the function `on` returned and release
-that instead.
+unwound in between. Register listeners in an
+[effect scope](effects.md#scopes) released in `dep-down`, or keep the
+function `on` returned and release that, so a re-run registers them once. A
+[plugin](plugins.md) does this for its function. A service without
+dependencies runs `ready` once and needs neither.
 
 A listener is an effect labelled `(:on event)`, so `(effects s)` shows what
 a service is listening for.
