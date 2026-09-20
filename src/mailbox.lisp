@@ -1,8 +1,5 @@
 (in-package #:meow)
 
-(defun %now ()
-  (/ (get-internal-real-time) internal-time-units-per-second))
-
 (defun %wait-until (lock cv predicate timeout)
   "With LOCK held, wait on CV until PREDICATE returns true or TIMEOUT seconds
 pass (nil waits forever). Returns PREDICATE's value, or nil on timeout."

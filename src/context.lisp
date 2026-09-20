@@ -509,7 +509,8 @@ delay, doubled for each earlier restart within period up to the max if set."
           base))))
 
 ;;; TODO: one sleeping thread per pending restart, which outlives a stopped
-;;; context; use a shared timer if restart counts grow.
+;;; context; queue it on the shared timer (%TIMER-ADD) instead if restart
+;;; counts grow.
 (defun %schedule-start (child delay)
   "Cast %DELAYED-START for CHILD to the current process after DELAY seconds."
   (let ((self (self))

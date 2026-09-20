@@ -86,8 +86,9 @@ held. `target` is a service or its process; from another process it is a
 ;     (:on :meow/unmount) nil)
 ```
 
-[Listeners](events.md) are labelled `(:on event)` unless `on` is given a
-`:label` of its own.
+[Listeners](events.md) are labelled `(:on event)` and
+[timers](timers.md) `(:after seconds)` or `(:repeat seconds)`, unless they
+are given a `:label` of their own.
 
 ## Rules
 

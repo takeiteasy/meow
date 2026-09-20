@@ -15,7 +15,7 @@ backoff-max)` returns the plugin's process. The mount options work as they
 do for [`mount`](contexts.md#api).
 
 `function` is called with the service once every name in `depends-on` is
-registered, so it can use `effect`, `on`, `dependency`, `call` and the
+registered, so it can use `effect`, `on`, `after`, `repeat`, `dependency`, `call` and the
 [logger](logger.md) as any service does. It runs on its own process, and
 its return value is ignored.
 

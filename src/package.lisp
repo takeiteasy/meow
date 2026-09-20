@@ -1,6 +1,7 @@
 (defpackage #:meow
   (:use #:cl)
-  (:local-nicknames (#:a #:alexandria))
+  (:local-nicknames (#:a #:alexandria)
+                    (#:thpt #:trivial-high-precision-timer))
   (:export
    ;; processes
    #:process #:process-name #:process-thread #:process-alive-p
@@ -20,6 +21,7 @@
    #:service-dependencies #:dependency
    #:metadata #:ready #:dep-down #:handle #:dispose #:update-config
    #:effect #:with-effect #:with-effect-scope #:effects
+   #:after #:repeat
    ;; plugins
    #:function-plugin #:mount-function
    ;; config

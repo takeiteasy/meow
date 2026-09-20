@@ -6,17 +6,18 @@ application-specific code.
 ## Layering
 
 ```
-┌───────────────────────────────────────────┐
+┌────────────────────────────────────────────┐
 │ hot reload · config                       │  built
-│ events                                    │  built
-│ effects · delegation (agents)             │  built
-│ context · supervisor                      │  built
-│ service                                   │  built
-│ registry                                  │  built
-│ process · mailbox · call/cast             │  built
-├───────────────────────────────────────────┤
-│ bordeaux-threads (bt2) · alexandria       │
-└───────────────────────────────────────────┘
+│ events · timers                            │  built
+│ effects · delegation (agents)              │  built
+│ context · supervisor                       │  built
+│ service                                    │  built
+│ registry                                   │  built
+│ process · mailbox · call/cast              │  built
+├────────────────────────────────────────────┤
+│ bordeaux-threads · alexandria · closer-mop │
+│ trivial-high-precision-timer               │
+└────────────────────────────────────────────┘
 ```
 
 ## Concurrency
@@ -40,6 +41,9 @@ application-specific code.
   built.
 - [Reload](reload.md) restarts a context's child in a new process, keeping
   its instance.
+- A [timer](timers.md) runs a function on its service's process later, once
+  or on a period, and is cancelled when the service stops. One thread
+  schedules them all.
 - An [event](events.md) listener runs on its own service's process and is
   removed when that service stops. Events reach a whole registry or part of
   a context tree.

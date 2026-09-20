@@ -3,16 +3,19 @@
   :author "George Watson"
   :license "GPLv3"
   :version "0.1.0"
-  :depends-on ("bordeaux-threads" "alexandria" "closer-mop")
+  :depends-on ("bordeaux-threads" "alexandria" "closer-mop"
+               "trivial-high-precision-timer")
   :pathname "src/"
   :serial t
   :components ((:file "package")
+               (:file "clock")
                (:file "mailbox")
                (:file "process")
                (:file "call")
                (:file "registry")
                (:file "event")
                (:file "service")
+               (:file "timer")
                (:file "context")
                (:file "agent")
                (:file "plugin"))
@@ -42,6 +45,7 @@
                (:file "service")
                (:file "effect")
                (:file "context")
+               (:file "timer")
                (:file "agent")
                (:file "event")
                (:file "plugin"))

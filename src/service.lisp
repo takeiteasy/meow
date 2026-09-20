@@ -341,6 +341,8 @@ it signalled."
          (apply #'%apply-config service (rest message)))
         ((and (a:proper-list-p message) (eq (first message) '%effects))
          (%effect-labels service))
+        ((and (a:proper-list-p message) (eq (first message) '%timer-fire))
+         (%timer-fire (second message)))
         (t (handle service message))))
 
 (defgeneric %dispatch (service message))

@@ -25,6 +25,7 @@ Runs on SBCL and ECL.
 - [Effects](docs/effects.md)
 - [Delegation](docs/delegation.md)
 - [Events](docs/events.md)
+- [Timers](docs/timers.md)
 - [Config](docs/config.md)
 - [Hot reload](docs/reload.md)
 - [Updating config](docs/update.md)
