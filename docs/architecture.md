@@ -32,6 +32,8 @@ application-specific code.
 - An [effect](effects.md) is a resource released when its service stops.
   Effects can be labelled, listed, and grouped in a scope released on its
   own.
+- A [plugin](plugins.md) is a function mounted as a service, re-run when a
+  dependency comes back.
 - An [agent](delegation.md) is a service delegated to a context by a
   parent process, which it reports back to when it finishes or exits.
 - A service's [config](config.md) is validated when the instance is

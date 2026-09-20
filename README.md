@@ -20,6 +20,7 @@ Runs on SBCL and ECL.
 - [Processes](docs/processes.md)
 - [Registry](docs/registry.md)
 - [Services](docs/services.md)
+- [Plugins](docs/plugins.md)
 - [Contexts](docs/contexts.md)
 - [Effects](docs/effects.md)
 - [Delegation](docs/delegation.md)

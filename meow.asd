@@ -14,7 +14,8 @@
                (:file "event")
                (:file "service")
                (:file "context")
-               (:file "agent"))
+               (:file "agent")
+               (:file "plugin"))
   :in-order-to ((test-op (test-op "meow/tests"))))
 
 (defsystem "meow/logger"
@@ -42,7 +43,8 @@
                (:file "effect")
                (:file "context")
                (:file "agent")
-               (:file "event"))
+               (:file "event")
+               (:file "plugin"))
   :perform (test-op (o c)
              (unless (symbol-call :fiveam :run! :meow)
                (error "meow tests failed"))))
