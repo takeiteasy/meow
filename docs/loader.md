@@ -63,7 +63,7 @@ A change inside a nested entry reaches that entry as changed `:children`,
 which reloads that context and remounts its subtree.
 
 An entry that fails to mount or update is reported as a warning and the
-rest are still applied. A file that cannot be read or doesn't validate is
+rest are still applied; it is tried again the next time the file changes. A file that cannot be read or doesn't validate is
 reported the same way and leaves the tree as it is.
 
 After a change, the loader emits

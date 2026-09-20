@@ -22,7 +22,8 @@ git clone https://github.com/takeiteasy/trivial-high-precision-timer \
 ```
 
 The [logger](logger.md) and the source [watcher](hmr.md) load separately,
-as `meow/logger` and `meow/hmr`.
+as `meow/logger` and `meow/hmr`. Everything else, including the config-file
+[loader](loader.md), is in `meow` itself.
 
 ## Tests
 

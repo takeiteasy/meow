@@ -221,3 +221,13 @@ runs on a process of its own, which sees the global value.")
         (write-config '((tuned :level 1) (provider)))
         (is-true (eventually (lambda () (child-process loader 'provider)) 10))
         (stop-and-join ctx)))))
+
+(test the-file-reads-in-cl-user-without-a-package
+  (with-config
+    (write-config '((meow:context :name :nested)))
+    (with-fresh-registry ()
+      (let ((ctx (start-context)))
+        (let ((loader (meow:mount ctx 'meow:loader :interval 10
+                                                   :file (namestring *config*))))
+          (is (equal '(:nested) (mounted-names loader))))
+        (stop-and-join ctx)))))

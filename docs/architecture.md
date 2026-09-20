@@ -38,7 +38,8 @@ application-specific code.
 - An [agent](delegation.md) is a service delegated to a context by a
   parent process, which it reports back to when it finishes or exits.
 - A service's [config](config.md) is validated when the instance is
-  built.
+  built. A [loader](loader.md) takes a subtree's config from a file and
+  applies the difference as the file changes.
 - [Reload](reload.md) restarts a context's child in a new process, keeping
   its instance. A [watcher](hmr.md) does that for a subtree whenever a
   source file changes.
