@@ -27,6 +27,14 @@
 (defmethod meow:ready ((s effectful-context))
   (acquire s :context))
 
+(meow:defservice late-effect (reporting) ())
+
+(defmethod meow:dispose ((s late-effect) reason)
+  (declare (ignore reason))
+  (report s :stopping-status (meow:service-status s))
+  (report s :late (handler-case (meow:effect s (constantly (constantly nil)))
+                    (error (e) e))))
+
 (test effects-unwind-lifo-before-dispose
   (with-fresh-registry ()
     (let ((p (start 'effectful)))
@@ -126,3 +134,13 @@ current process."
                        '(effectful-context :released :context)
                        (list 'effectful-context :disposed :shutdown ctx))
                  (drain))))))
+
+(test an-effect-cannot-be-acquired-while-stopping
+  (with-fresh-registry ()
+    (let ((p (start 'late-effect :name :e)))
+      (stop-and-join p)
+      (destructuring-bind ((a status-tag status) (b late-tag late)) (drain)
+        (declare (ignore a b))
+        (is (equal '(:stopping-status :late) (list status-tag late-tag)))
+        (is (eq :stopping status))
+        (is (typep late 'error))))))

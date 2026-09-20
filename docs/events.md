@@ -102,6 +102,16 @@ A listener is an [effect](effects.md) of its service, so it is removed when
 the service stops. Calling the function that `on` returned removes it early.
 Deliveries that are already queued when it is removed are dropped.
 
+## Core events
+
+The `meow/` prefix is reserved for events the core emits.
+
+| Event | Target | Args |
+|---|---|---|
+| `:meow/status` | the service's root registry | `name process old new`. See [lifecycle](services.md#lifecycle). |
+| `:meow/mount` | the context | `name process`. See [mount events](contexts.md#mount-events). |
+| `:meow/unmount` | the context | `name process reason`. |
+
 ## Rules
 
 `on` can only be called from the service's own process, for example in

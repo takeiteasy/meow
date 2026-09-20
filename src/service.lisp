@@ -12,7 +12,7 @@ the service stops. START-SERVICE captures the value.")
    (debug :initform nil)
    (deps :initform '())
    (effects :initform '())
-   (status :initform :waiting)))
+   (status :initform :starting)))
 
 (defgeneric service-dependencies (service)
   (:documentation "Names SERVICE waits for before READY.")
@@ -129,8 +129,21 @@ problem strings."
               `(%remove-option-method '%config-problems '(append) ',name))
          (find-class ',name)))))
 
+(defun service-status (service)
+  "SERVICE's lifecycle state: :starting, :waiting, :ready, :stopping or
+:stopped."
+  (slot-value service 'status))
+
 (defun service-ready-p (service)
   (eq (slot-value service 'status) :ready))
+
+(defun %set-status (service new)
+  "Move SERVICE to NEW, announcing the change on its registry's event bus."
+  (with-slots (status registry name process) service
+    (unless (eq status new)
+      (let ((old (shiftf status new)))
+        (when registry
+          (emit (%root registry) :meow/status name process old new))))))
 
 (defun dependency (service name)
   "The current process of dependency NAME, or nil."
@@ -141,7 +154,7 @@ problem strings."
     (when (and (eq status :waiting)
                (every (lambda (name) (assoc name deps :test #'equal))
                       (service-dependencies service)))
-      (setf status :ready)
+      (%set-status service :ready)
       (ready service))))
 
 (defun %dep-up (service name process)
@@ -156,7 +169,7 @@ problem strings."
     (when (assoc name deps :test #'equal)
       (setf deps (remove name deps :key #'car :test #'equal))
       (when (eq status :ready)
-        (setf status :waiting)
+        (%set-status service :waiting)
         (dep-down service name reason)))))
 
 (defun %require-own-process (service)
@@ -175,7 +188,7 @@ problem strings."
 SERVICE stops, in reverse order of acquisition and before DISPOSE. Returns a
 function that runs the disposer early. Only callable from SERVICE's process."
   (%require-own-process service)
-  (when (eq (slot-value service 'status) :stopped)
+  (when (member (slot-value service 'status) '(:stopping :stopped))
     (error "~a is stopping." service))
   (a:if-let ((disposer (funcall acquire)))
     (let ((cell (list disposer)))
@@ -197,23 +210,24 @@ resource, is its disposer. Returns the resource and the release function."
 
 (defun %reset (service)
   "Clear the runtime state of a stopped SERVICE so it can be started again."
-  (with-slots (process deps effects status) service
+  (with-slots (process deps effects) service
     (setf process nil
           deps '()
-          effects '()
-          status :waiting)))
+          effects '()))
+  (%set-status service :starting))
 
 (defgeneric %teardown (service reason)
   (:documentation "Unwind SERVICE's effects, then DISPOSE."))
 
 (defmethod %teardown ((service service) reason)
-  (with-slots (effects status) service
-    (setf status :stopped)
+  (%set-status service :stopping)
+  (with-slots (effects) service
     (loop while effects
           do (let ((disposer (car (pop effects))))
                (handler-case (funcall disposer)
                  (error (e) (%teardown-failed e service))))))
-  (dispose service reason))
+  (dispose service reason)
+  (%set-status service :stopped))
 
 (defgeneric %startup (service)
   (:documentation "Called on SERVICE's process once it is registered, before
@@ -238,7 +252,8 @@ runs before the registry's unregister hook."
                   :props (metadata service) :registry registry)))
     (dolist (name (service-dependencies service))
       (subscribe name :registry registry))
-    (%startup service)))
+    (%startup service)
+    (%set-status service :waiting)))
 
 (defun skip-message (&optional condition)
   "Invoke the SKIP-MESSAGE restart: drop the message being handled and keep

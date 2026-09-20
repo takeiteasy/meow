@@ -288,3 +288,18 @@
     (define)
     (is (null (config-problems 'redefined)))
     (is (null (meow:service-dependencies (make-instance 'redefined))))))
+
+(meow:defservice tracked (reporting) ())
+
+(defmethod meow:ready ((s tracked))
+  (report s :ready-in (meow:service-status s)))
+
+(test service-status-reports-the-lifecycle-state
+  (with-fresh-registry ()
+    (multiple-value-bind (p s) (start 'tracked :name :t)
+      (is (has '(:t :ready-in :ready) (drain)))
+      (is (eq :ready (meow:service-status s)))
+      (is-true (meow:service-ready-p s))
+      (stop-and-join p)
+      (is (eq :stopped (meow:service-status s)))
+      (is-false (meow:service-ready-p s)))))

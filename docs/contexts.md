@@ -36,6 +36,25 @@ to a context's subtree or its ancestors. A child's name is its
 service name, or nil for an unregistered child such as a
 [delegated agent](delegation.md).
 
+## Mount events
+
+A context announces each child on itself, so `*event-scope*` decides who
+hears it: `:down`, the default, reaches listeners in that subtree.
+
+| Event | Args |
+|---|---|
+| `:meow/mount` | `name process` |
+| `:meow/unmount` | `name process reason` |
+
+`:meow/mount` is emitted once the child is registered and running, so the
+child's own first `:meow/status` events may already have been emitted.
+`:meow/unmount` follows the child's `:stopped`, for every reason it stops.
+A restart or a [reload](reload.md) is an unmount followed by a mount with a
+new process.
+
+Declared children are mounted during the context's own `:starting`, so
+their events precede the context's first `:meow/status`.
+
 ## Declared children
 
 The `:children` initarg lists specs, each `(class &rest initargs)` as

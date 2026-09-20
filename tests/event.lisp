@@ -426,3 +426,77 @@ other{ :d } and an unmounted :top, each listening for :ping."
       (is (equal '((:y :link (1))) (drain)))
       (stop-and-join x)
       (stop-and-join y))))
+
+;;; Core events
+
+(defun start-watcher (name &rest events)
+  "A listener reporting every delivery of EVENTS."
+  (let ((p (start 'listening :name name)))
+    (dolist (event events p)
+      (meow:call p (list :on event)))))
+
+(defun heard (name messages)
+  "The args of each delivery NAME reported."
+  (loop for (who tag args) in messages
+        when (and (eq who name) (eq tag :heard))
+          collect args))
+
+(test status-events-follow-a-service-through-its-life
+  (with-fresh-registry ()
+    (let ((w (start-watcher :w :meow/status)))
+      (multiple-value-bind (p s) (start 'provider :name :p)
+        (declare (ignore s))
+        (stop-and-join p)
+        (is (equal (list (list :p p :starting :waiting)
+                         (list :p p :waiting :ready)
+                         (list :p p :ready :stopping)
+                         (list :p p :stopping :stopped))
+                   (remove :p (heard :w (drain)) :key #'first :test-not #'eq))))
+      (stop-and-join w))))
+
+(test a-waiting-service-is-announced-when-its-dependency-goes
+  (with-fresh-registry ()
+    (let ((w (start-watcher :w :meow/status))
+          (provider (start 'provider :name 'provider))
+          (consumer (start 'consumer :name :c)))
+      (stop-and-join provider)
+      (is (has (list :c consumer :ready :waiting) (heard :w (drain))))
+      (stop-and-join consumer)
+      (stop-and-join w))))
+
+(test mount-and-unmount-are-announced-on-the-context
+  (with-fresh-registry ()
+    (let* ((app (meow:start-service (make-instance 'meow:context :name :app)))
+           (w (meow:mount app 'listening :name :w :reporter (meow:self))))
+      (meow:call w '(:on :meow/mount))
+      (meow:call w '(:on :meow/unmount))
+      (let ((p (meow:mount app 'provider :name :p)))
+        (is (equal (list (list :p p)) (heard :w (drain))))
+        (meow:unmount app :p)
+        (is (equal (list (list :p p :shutdown)) (heard :w (drain)))))
+      (stop-and-join app))))
+
+(test reload-announces-an-unmount-then-a-mount
+  (with-fresh-registry ()
+    (let* ((app (meow:start-service (make-instance 'meow:context :name :app)))
+           (w (meow:mount app 'listening :name :w :reporter (meow:self))))
+      (meow:call w '(:on :meow/mount))
+      (meow:call w '(:on :meow/unmount))
+      (meow:call w '(:on :meow/status))
+      (let* ((old (meow:mount app 'provider :name :p))
+             (new (progn (drain) (meow:reload app :p)))
+             ;; :waiting -> :ready races the mount: it is emitted by the child
+             ;; once it is running, the mount by the context once START-SERVICE
+             ;; has returned.
+             (events (remove (list :p new :waiting :ready)
+                             (remove :p (heard :w (drain))
+                                     :key #'first :test-not #'eq)
+                             :test #'equal)))
+        (is (equal (list (list :p old :ready :stopping)
+                         (list :p old :stopping :stopped)
+                         (list :p old :reload)
+                         (list :p nil :stopped :starting)
+                         (list :p new :starting :waiting)
+                         (list :p new))
+                   events))
+        (stop-and-join app)))))

@@ -46,6 +46,33 @@ Specialise any of these generic functions. Each has a no-op default.
 or nil.
 `(service-ready-p s)` returns true when every dependency is present.
 
+## Lifecycle
+
+`(service-status s)` returns where a service is in its life:
+
+| State | Meaning |
+|---|---|
+| `:starting` | Being registered and subscribed to its dependencies. |
+| `:waiting` | Registered, waiting for a dependency. |
+| `:ready` | Every dependency is present. `service-ready-p` is true. |
+| `:stopping` | Effects are unwinding and `dispose` is running. |
+| `:stopped` | Gone. A [reload](reload.md) returns it to `:starting`. |
+
+Each change is announced on the service's root [registry](registry.md)'s
+event bus as `:meow/status` with the service's name, its process, the old
+state and the new one:
+
+```lisp
+(on s :meow/status
+    (lambda (name process old new)
+      (declare (ignore process))
+      (format t "~a ~a -> ~a~%" name old new)))
+```
+
+The event carries identity rather than the instance, so a listener never
+reads another service's slots. A service whose start fails never reaches
+`:waiting` and announces nothing; its process exits instead.
+
 ## Running
 
 ```lisp
@@ -96,3 +123,5 @@ A service stops when it is sent `stop`, calls `exit`, or takes the
 2. `dispose` runs with the exit reason.
 3. The name, if any, is unregistered, and dependants get `dep-down` with that same
    reason.
+
+Steps 1 and 2 run in `:stopping`, so `effect` signals an error there.

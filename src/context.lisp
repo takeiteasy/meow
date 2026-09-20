@@ -193,11 +193,14 @@ PROCESS to the waiting process meanwhile return (:deadlock ...)."
     (setf (child-name child) (service-name service)
           (child-process child) process
           (child-pending child) nil)
-    (unless (add-exit-hook process (lambda (process reason)
-                                     (cast self (list '%child-exit child
-                                                      process reason))))
-      (cast self (list '%child-exit child process
-                       (process-exit-reason process))))
+    (emit context :meow/mount (child-name child) process)
+    (flet ((gone (reason)
+             (emit context :meow/unmount (child-name child) process reason)
+             (cast self (list '%child-exit child process reason))))
+      (unless (add-exit-hook process (lambda (process reason)
+                                       (declare (ignore process))
+                                       (gone reason)))
+        (gone (process-exit-reason process))))
     process))
 
 (defun %plist-keys (plist)
