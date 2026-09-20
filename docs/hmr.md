@@ -10,6 +10,8 @@ ships as the separate `meow/hmr` system.
 (mount *app* 'watcher :interval 0.5)
 ```
 
+It covers source files; a [loader](loader.md) covers config files.
+
 Mount it wherever the subtree it should reload starts: it reloads children
 of its own [context](contexts.md) and of every context under it.
 

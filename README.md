@@ -27,6 +27,7 @@ Runs on SBCL and ECL.
 - [Events](docs/events.md)
 - [Timers](docs/timers.md)
 - [Config](docs/config.md)
+- [Config files](docs/loader.md)
 - [Hot reload](docs/reload.md)
 - [Watching sources](docs/hmr.md)
 - [Updating config](docs/update.md)

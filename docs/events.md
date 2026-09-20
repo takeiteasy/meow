@@ -122,6 +122,7 @@ The `meow/` prefix is reserved for events the core emits.
 | `:meow/unmount` | the context, `:up` | `name process reason`. |
 | `:meow/log` | the service's root registry | `level name message time`. See [logger](logger.md). |
 | `:meow/reloaded` | the watcher's context, `:up` | `files names`. See [watching sources](hmr.md). |
+| `:meow/loaded` | the loader's context, `:up` | `file report`. See [config files](loader.md). |
 
 ## Rules
 

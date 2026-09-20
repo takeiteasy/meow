@@ -4,8 +4,8 @@
 
 (deftype %shutdown-type () '(or (real 0) (eql :infinity)))
 
-(defun %spec-problems (context)
-  (loop for spec in (slot-value context 'specs)
+(defun %spec-problems (specs)
+  (loop for spec in specs
         for problem = (cond ((not (and (consp spec) (symbolp (first spec))
                                        (a:proper-list-p spec)
                                        (evenp (length (rest spec)))))
@@ -35,7 +35,8 @@
                           entry)))
 
 (defun %context-problems (context)
-  (append (%spec-problems context) (%intercept-problems context)))
+  (append (%spec-problems (slot-value context 'specs))
+          (%intercept-problems context)))
 
 (defservice context ()
   ((intensity :initarg :intensity :initform 5 :type (integer 0)

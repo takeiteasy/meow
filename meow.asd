@@ -9,6 +9,7 @@
   :serial t
   :components ((:file "package")
                (:file "clock")
+               (:file "source")
                (:file "mailbox")
                (:file "process")
                (:file "call")
@@ -18,7 +19,8 @@
                (:file "timer")
                (:file "context")
                (:file "agent")
-               (:file "plugin"))
+               (:file "plugin")
+               (:file "loader"))
   :in-order-to ((test-op (test-op "meow/tests"))))
 
 (defsystem "meow/logger"
@@ -42,7 +44,7 @@
   :in-order-to ((test-op (test-op "meow/hmr/tests"))))
 
 (defsystem "meow/tests"
-  :depends-on ("meow" "fiveam")
+  :depends-on ("meow" "fiveam" "uiop")
   :pathname "tests/"
   :serial t
   :components ((:file "package")
@@ -58,7 +60,8 @@
                (:file "timer")
                (:file "agent")
                (:file "event")
-               (:file "plugin"))
+               (:file "plugin")
+               (:file "loader"))
   :perform (test-op (o c)
              (unless (symbol-call :fiveam :run! :meow)
                (error "meow tests failed"))))

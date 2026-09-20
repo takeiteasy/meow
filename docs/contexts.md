@@ -73,7 +73,8 @@ returns, and again whenever the context is restarted or
 ```
 
 If a declared child fails to start, the context's start fails with that
-error. Malformed specs signal `invalid-config`.
+error. Malformed specs signal `invalid-config`. A [loader](loader.md) takes
+the same specs from a file and re-applies them as it changes.
 
 ## Restarts
 

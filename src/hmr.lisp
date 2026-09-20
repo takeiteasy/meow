@@ -29,16 +29,6 @@ way. Symlinked directories, such as /tmp on macOS, would not match otherwise."
              (a:hash-table-values *%service-sources*)))
    :test #'equal))
 
-(defun %stamp (file)
-  "A key for FILE's contents, or nil if it cannot be read. FILE-WRITE-DATE
-has one-second resolution, too coarse for an edit made while the watcher
-runs, so this reads the file."
-  (ignore-errors
-   (with-open-file (stream file)
-     (let* ((buffer (make-string (file-length stream)))
-            (count (read-sequence buffer stream)))
-       (cons count (sxhash (subseq buffer 0 count)))))))
-
 (defun %changed-files (watcher)
   "The watched files whose stamp moved since the last scan, recording the new
 stamps. Every file is new on the first call."
