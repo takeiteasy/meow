@@ -32,22 +32,35 @@ being sent."
         (apply (listener-function listener) (delivery-args delivery))
         +%skipped+)))
 
-(defun on (service event function)
+(defun on (service event function &key prepend)
   "Call FUNCTION on SERVICE's process whenever EVENT is emitted in its
-scope. The listener is an effect of SERVICE. Returns a function that
+scope. The listener runs after the ones already registered for EVENT, or
+before them with PREPEND. It is an effect of SERVICE. Returns a function that
 removes it early. Only callable from SERVICE's process."
   (let ((registry (%root (service-registry service)))
         (listener (make-listener service (service-process service) function)))
     (effect service
             (lambda ()
               (%with-registry-lock (registry)
-                (a:appendf (gethash event listeners) (list listener)))
+                (if prepend
+                    (push listener (gethash event listeners))
+                    (a:appendf (gethash event listeners) (list listener))))
               (lambda ()
                 (setf (listener-active listener) nil)
                 (%with-registry-lock (registry)
                   (a:deletef (gethash event listeners) listener)
                   (unless (gethash event listeners)
                     (remhash event listeners))))))))
+
+(defun once (service event function &key prepend)
+  "Like ON, but the listener is removed before its first delivery runs, so
+FUNCTION is called at most once."
+  (let ((release nil))
+    (setf release (on service event
+                      (lambda (&rest args)
+                        (funcall release)
+                        (apply function args))
+                      :prepend prepend))))
 
 (defun %within-p (service context)
   "True if SERVICE is CONTEXT or mounted somewhere under it."

@@ -31,5 +31,5 @@
    ;; delegation
    #:agent #:agent-parent #:agent-ref #:delegate
    ;; events
-   #:on #:emit #:emit-serial #:emit-parallel #:bail #:waterfall
+   #:on #:once #:emit #:emit-serial #:emit-parallel #:bail #:waterfall
    #:*event-timeout* #:*event-scope*))

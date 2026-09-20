@@ -6,16 +6,19 @@
 (meow:defservice listening (reporting)
   ((releases :initform '() :accessor releases)))
 
-(defun listen-for (s event &key result delay)
+(defun listen-for (s event &key result delay prepend once)
   "Listen for EVENT, reporting (name :heard args own-process-p). RESULT :crash
 signals an error; otherwise it is the listener's value."
-  (meow:on s event (lambda (&rest args)
-                     (report s :heard args
-                             (eq (meow:self) (meow:service-process s)))
-                     (when delay (sleep delay))
-                     (if (eq result :crash)
-                         (error "listener crashed")
-                         result))))
+  (funcall (if once #'meow:once #'meow:on)
+           s event
+           (lambda (&rest args)
+             (report s :heard args
+                     (eq (meow:self) (meow:service-process s)))
+             (when delay (sleep delay))
+             (if (eq result :crash)
+                 (error "listener crashed")
+                 result))
+           :prepend prepend))
 
 (defun link-for (s event &key tag result delay before)
   "Listen for EVENT as a waterfall link, reporting (name :link args). Calls
@@ -51,6 +54,11 @@ BEFORE runs first; DELAY sleeps after the rest of the chain has returned."
          (apply #'meow:emit-parallel (meow:service-context s) (rest args))))
       (:relay (destructuring-bind (event emitter) args
                 (meow:on s event (lambda () (funcall emitter s))))
+       :ok)
+      (:relay-once (destructuring-bind (event emitter) args
+                     (meow:once s event (lambda ()
+                                          (report s :relayed)
+                                          (funcall emitter s))))
        :ok)
       (:bail (apply #'meow:bail s args))
       (:link (push (cons (first args) (apply #'link-for s args)) (releases s))
@@ -500,3 +508,45 @@ other{ :d } and an unmounted :top, each listening for :ping."
                          (list :p new))
                    events))
         (stop-and-join app)))))
+
+;;; Registration order and one-shot listeners
+
+(test prepend-puts-a-listener-first
+  (with-fresh-registry (r)
+    (let ((a (start-listener :a :ping))
+          (b (start-listener :b :ping :prepend t))
+          (c (start-listener :c :ping)))
+      (meow:emit-serial r :ping)
+      (is (equal '(:b :a :c) (mapcar #'first (drain))))
+      (mapc #'stop-and-join (list a b c)))))
+
+(test once-is-removed-after-its-first-delivery
+  (with-fresh-registry (r)
+    (let ((p (start-listener :a :ping :once t)))
+      (is (= 1 (listener-count r)))
+      (meow:emit-serial r :ping 1)
+      (is (equal '((:a :heard (1) t)) (drain)))
+      (is (zerop (listener-count r)) "the listener removes itself")
+      (meow:emit-serial r :ping 2)
+      (is (null (drain)))
+      (stop-and-join p))))
+
+(test once-is-removed-before-it-runs
+  (with-fresh-registry (r)
+    (let ((p (start 'listening :name :a)))
+      ;; The listener emits the event it is listening for; it must not
+      ;; deliver to itself again.
+      (meow:call p (list :relay-once :ping (lambda (s) (meow:emit-serial s :ping))))
+      (meow:emit-serial r :ping)
+      (is (equal '((:a :relayed)) (drain)))
+      (is (zerop (listener-count r)))
+      (stop-and-join p))))
+
+(test a-queued-delivery-to-a-spent-once-listener-is-dropped
+  (with-fresh-registry (r)
+    (let ((p (start-listener :a :ping :once t :delay 0.3)))
+      (meow:emit r :ping 1)
+      (meow:emit r :ping 2)
+      (is (equal '((:a :heard (1) t)) (drain 0.5)))
+      (is (null (meow:emit-parallel r :ping)) "no listener is left")
+      (stop-and-join p))))

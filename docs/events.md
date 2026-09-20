@@ -17,7 +17,8 @@ tree.
 
 | Call | Purpose |
 |---|---|
-| `(on service event function)` | Call `function` with the emitted args whenever `event` is emitted. Returns a function that removes the listener. |
+| `(on service event function &key prepend)` | Call `function` with the emitted args whenever `event` is emitted. Returns a function that removes the listener. |
+| `(once service event function &key prepend)` | As `on`, but the listener is removed before its first delivery runs. |
 | `(emit target event &rest args)` | Send to every listener without waiting. Returns nil. |
 | `(emit-serial target event &rest args)` | Call each listener in registration order, waiting for each one. Returns nil. |
 | `(emit-parallel target event &rest args)` | Send to every listener at once and wait for all of them. Returns their values in registration order. |
@@ -25,6 +26,10 @@ tree.
 | `(waterfall target event inner &rest args)` | Run the listeners as a chain wrapped around `inner`. Returns what the chain returns. |
 
 Events compare with `equal`. The emitter can be any thread.
+
+Listeners run in registration order. `:prepend` puts one in front of those
+already registered for that event, so a later `:prepend` runs before an
+earlier one.
 
 ## Scope
 
@@ -101,6 +106,10 @@ inside it, so the outermost listener's timeout is the budget for the whole chain
 A listener is an [effect](effects.md) of its service, so it is removed when
 the service stops. Calling the function that `on` returned removes it early.
 Deliveries that are already queued when it is removed are dropped.
+
+`once` removes its listener *before* running it, so an event the function
+emits itself does not reach it again, and it is gone even if the function
+fails. A second delivery already queued behind the first is dropped.
 
 ## Core events
 
