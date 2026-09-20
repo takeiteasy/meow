@@ -81,8 +81,8 @@ the refused caller moves on.
 
 A wait that starts after the cycle's other calls, such as a context
 stopping a child that is already calling it, breaks them instead: each
-call into the new waiter returns `(:deadlock processes)`, and the message
-it sent is dropped rather than handled later.
+call into the new waiter returns `(:deadlock processes)`, and `serve` and
+service loops drop the message it sent instead of handling it later.
 
 Wire format for processes that run their own `receive` loop:
 `(:call cell msg)`, answered with `(reply cell value)`; `(:cast msg)`; and

@@ -305,7 +305,7 @@ of CONTEXT and its ancestors. Nearer contexts and later entries win."
 (defun %unmount (context target timeout)
   (with-slots (children) context
     (a:when-let ((child (%find-child context target)))
-      (when (eq (child-process child) *%caller*)
+      (when (and *%caller* (eq (child-process child) *%caller*))
         (return-from %unmount (%self-stop-error "Unmounting" *%caller*)))
       (a:deletef children child)
       (or (%stop-and-wait (child-process child)
@@ -329,7 +329,7 @@ of CONTEXT and its ancestors. Nearer contexts and later entries win."
 
 (defun %reload (context target timeout)
   (a:when-let ((child (%find-child context target)))
-    (if (eq (child-process child) *%caller*)
+    (if (and *%caller* (eq (child-process child) *%caller*))
         (list :error (%self-stop-error "Reloading" *%caller*))
         (%reload-child context child timeout))))
 
