@@ -56,7 +56,7 @@ or nil.
 | `:waiting` | Registered, waiting for a dependency. |
 | `:ready` | Every dependency is present. `service-ready-p` is true. |
 | `:stopping` | Effects are unwinding and `dispose` is running. |
-| `:stopped` | Gone. A [reload](reload.md) returns it to `:starting`. |
+| `:stopped` | Gone. A [reload](reload.md) announces `:starting` again for the same instance, with a process of nil until the new one runs. |
 
 Each change is announced on the service's root [registry](registry.md)'s
 event bus as `:meow/status` with the service's name, its process, the old
@@ -71,7 +71,9 @@ state and the new one:
 
 The event carries identity rather than the instance, so a listener never
 reads another service's slots. A service whose start fails never reaches
-`:waiting` and announces nothing; its process exits instead.
+`:waiting` and announces nothing; its process exits instead. A service
+listening for its own status never sees `:stopping` or `:stopped`, which are
+announced once it has stopped taking messages.
 
 ## Running
 
