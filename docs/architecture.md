@@ -57,5 +57,5 @@ application-specific code.
 
 ## Implementations
 
-SBCL and ECL are first class and run in CI. CCL is expected to work but is
-not tested in CI.
+SBCL and ECL are first class and run in CI on every push. CCL is supported
+and runs in CI on demand, through the `ccl` workflow.

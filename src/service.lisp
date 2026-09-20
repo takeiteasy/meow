@@ -65,15 +65,31 @@ nil reloads SERVICE instead.")
   (:method-combination append :most-specific-last)
   (:method append ((service service)) '()))
 
-;;; TODO: class slots are walked on every make-instance; cache per class if
-;;; mount rates matter.
+(defvar *%service-slot-types* (make-hash-table)
+  "The slot types each DEFSERVICE class declared. DEFSERVICE keeps them here
+instead of on the class: an implementation that checks an initarg against its
+slot's :TYPE would signal from MAKE-INSTANCE before %VALIDATE ever runs, and
+report one slot rather than every problem the config has.")
+
+(defun %slot-types (class)
+  "Every slot type CLASS declares, superclass first, as (name . type)."
+  (loop for super in (reverse (c2mop:class-precedence-list class))
+        append (multiple-value-bind (types recorded)
+                   (gethash (class-name super) *%service-slot-types*)
+                 (if recorded
+                     types
+                     (loop for slot in (c2mop:class-direct-slots super)
+                           for type = (c2mop:slot-definition-type slot)
+                           unless (eq type t)
+                             collect (cons (c2mop:slot-definition-name slot)
+                                           type))))))
+
+;;; TODO: the precedence list is walked on every make-instance; cache per
+;;; class if mount rates matter.
 (defun %type-problems (service)
-  (loop for slot in (c2mop:class-slots (class-of service))
-        for name = (c2mop:slot-definition-name slot)
-        for type = (c2mop:slot-definition-type slot)
-        unless (or (eq type t)
-                   (not (slot-boundp service name))
-                   (typep (slot-value service name) type))
+  (loop for (name . type) in (%slot-types (class-of service))
+        when (and (slot-boundp service name)
+                  (not (typep (slot-value service name) type)))
           collect (format nil "~(~a~): ~s is not of type ~s"
                           name (slot-value service name) type)))
 
@@ -112,10 +128,19 @@ problem strings."
     ;; The source is read here rather than in the expansion: at load time
     ;; *LOAD-TRUENAME* is the fasl, not the file it was compiled from.
     (let ((initargs (rest (option :default-initargs)))
-          (source (or *compile-file-truename* *load-truename*)))
+          (source (or *compile-file-truename* *load-truename*))
+          (types (loop for slot in direct-slots
+                       when (and (consp slot) (getf (rest slot) :type))
+                         collect (cons (first slot) (getf (rest slot) :type))))
+          (slots (mapcar (lambda (slot)
+                           (if (consp slot)
+                               (cons (first slot)
+                                     (a:remove-from-plist (rest slot) :type))
+                               slot))
+                         direct-slots)))
       `(progn
          (defclass ,name (,@direct-superclasses service)
-           ,direct-slots
+           ,slots
            (:default-initargs
             ,@initargs
             ,@(unless (nth-value 2 (get-properties initargs '(:name)))
@@ -125,6 +150,7 @@ problem strings."
                                   '(:depends-on :name :validate
                                     :default-initargs)))
                         options))
+         (setf (gethash ',name *%service-slot-types*) ',types)
          ,@(when source
              `((setf (gethash ',name *%service-sources*) ,source)))
          ,(if (option :depends-on)

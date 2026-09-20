@@ -42,3 +42,6 @@ From the shell, `tests/test.sh` runs it on `sbcl` (default), `ecl` or
 ```sh
 tests/test.sh ecl
 ```
+
+SBCL and ECL run in CI on every push; the `ccl` workflow runs CCL on
+demand.

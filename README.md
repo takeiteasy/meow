@@ -11,7 +11,7 @@ give their subtree its own instances of a service or override its
 config. Services talk through call/cast and an event bus, and tie
 resources to their lifetime as effects.
 
-Runs on SBCL and ECL.
+Runs on SBCL, ECL and CCL.
 
 ## Docs
 

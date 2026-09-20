@@ -25,6 +25,12 @@ so a bad config never reaches `start-service`, `mount` or `reload`.
 2. If every slot type checks out, each `:validate` function runs.
    Superclass validators run first.
 
+`defservice` checks the types itself rather than leaving them on the class,
+so every bad slot is reported together, as `invalid-config`, on every
+implementation. A slot typed on a plain `defclass` subclass of `service` is
+checked too, but an implementation that checks initargs against slot types
+may signal its own error for it first.
+
 A `:validate` function takes the instance and returns a list of problem
 strings. It returns nil if the config is valid. It can be a function name
 or a lambda.

@@ -1,0 +1,36 @@
+name: ccl
+
+on: workflow_dispatch
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install SBCL
+        run: sudo apt-get update && sudo apt-get install -y sbcl
+
+      - name: Install CCL
+        run: |
+          curl -sSfLO https://github.com/Clozure/ccl/releases/download/v1.13/ccl-1.13-linuxx86.tar.gz
+          sudo tar xzf ccl-1.13-linuxx86.tar.gz -C /usr/local
+          sudo ln -s /usr/local/ccl/lx86cl64 /usr/local/bin/ccl
+
+      - name: Install Quicklisp
+        run: |
+          curl -sSfLO https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --non-interactive --no-userinit --load quicklisp.lisp \
+               --eval '(quicklisp-quickstart:install)'
+          cp -R "$GITHUB_WORKSPACE" ~/quicklisp/local-projects/meow
+
+      - name: Install dependencies outside Quicklisp
+        run: |
+          git clone --depth 1 https://github.com/takeiteasy/trivial-high-precision-timer \
+              ~/quicklisp/local-projects/trivial-high-precision-timer
+          git clone --depth 1 https://github.com/takeiteasy/trivial-wait \
+              ~/quicklisp/local-projects/trivial-wait
+
+      - name: Test
+        run: tests/test.sh ccl

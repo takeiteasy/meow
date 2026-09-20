@@ -269,6 +269,14 @@
   (is (equal '("retries: -1 is not of type (INTEGER 0)")
              (config-problems 'configured-child :retries -1))))
 
+(defclass plainly-typed (meow:service)
+  ((level :initarg :level :initform 0 :type integer)))
+
+(test types-on-a-plain-defclass-service-are-checked
+  #+ccl (skip "CCL checks the initarg against the slot type first")
+  #-ccl (is (equal '("level: \"high\" is not of type INTEGER")
+                   (config-problems 'plainly-typed :level "high"))))
+
 (test reinitialize-instance-validates
   (let ((s (make-instance 'configured)))
     (signals meow:invalid-config (reinitialize-instance s :port 1))))
