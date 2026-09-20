@@ -37,9 +37,9 @@ Specialise any of these generic functions. Each has a no-op default.
 | `(dispose s reason)` | When the service stops for any reason, before it is unregistered. |
 | `(update-config s old new)` | When its context [updates](update.md) its initargs. Return true to apply them in place. |
 
-`(effect s acquire)` ties a resource to the service's lifetime. See
-[effects](effects.md). `(on s event fn)` listens for
-[events](events.md).
+`(effect s acquire &key label)` ties a resource to the service's lifetime,
+and `(effects s)` lists what it holds. See [effects](effects.md).
+`(on s event fn)` listens for [events](events.md).
 
 `(dependency s name)` returns a dependency's current process.
 `(service-context s)` returns the [context](contexts.md) it is mounted in,

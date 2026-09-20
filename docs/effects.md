@@ -13,9 +13,9 @@ the service stops for any reason, it releases the resource.
                 (lambda () (close stream))))))
 ```
 
-`(effect service acquire)` calls `acquire`, which returns a disposer (a
-function of no arguments) or nil. If `acquire` signals, nothing is
-recorded.
+`(effect service acquire &key label)` calls `acquire`, which returns a
+disposer (a function of no arguments) or nil. If `acquire` signals, nothing
+is recorded. `label` names the effect for [listing](#listing).
 
 `with-effect` binds the resource, and its body is the disposer. It returns
 the resource and the release function.
@@ -25,7 +25,8 @@ the resource and the release function.
   (setf (log-stream s)
         (with-effect (stream s (open "app.log" :direction :output
                                                :if-exists :append
-                                               :if-does-not-exist :create))
+                                               :if-does-not-exist :create)
+                             :label :log-file)
           (close stream))))
 ```
 
@@ -47,6 +48,46 @@ has no further effect.
   ...
   (funcall release))
 ```
+
+## Scopes
+
+`with-effect-scope` collects the effects acquired in its body, so they can
+be released as a group later. It returns the body's value and a release
+function.
+
+```lisp
+(defmethod ready ((s watcher))
+  (setf (scope-release s)
+        (nth-value 1 (with-effect-scope (s)
+                       (on s :tick (lambda () (poll s)))))))
+
+(defmethod dep-down ((s watcher) name reason)
+  (declare (ignore name reason))
+  (funcall (scope-release s)))
+```
+
+Scopes nest, and releasing an outer one also releases the effects acquired
+in the scopes inside it. Releasing again has no further effect, and
+whatever a scope still holds when the service stops unwinds with the rest.
+
+This is what a [function plugin](plugins.md) uses to re-run cleanly after a
+dependency comes back.
+
+## Listing
+
+`(effects target)` returns the labels of a service's live effects, oldest
+first, with nil for an unlabelled one, so the count is the number of effects
+held. `target` is a service or its process; from another process it is a
+`call`, so the service answers it between messages.
+
+```lisp
+(effects *logger*)
+; => ((:on :meow/log) (:on :meow/status) (:on :meow/mount)
+;     (:on :meow/unmount) nil)
+```
+
+[Listeners](events.md) are labelled `(:on event)` unless `on` is given a
+`:label` of its own.
 
 ## Rules
 

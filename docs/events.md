@@ -17,8 +17,8 @@ tree.
 
 | Call | Purpose |
 |---|---|
-| `(on service event function &key prepend)` | Call `function` with the emitted args whenever `event` is emitted. Returns a function that removes the listener. |
-| `(once service event function &key prepend)` | As `on`, but the listener is removed before its first delivery runs. |
+| `(on service event function &key prepend label)` | Call `function` with the emitted args whenever `event` is emitted. Returns a function that removes the listener. |
+| `(once service event function &key prepend label)` | As `on`, but the listener is removed before its first delivery runs. |
 | `(emit target event &rest args)` | Send to every listener without waiting. Returns nil. |
 | `(emit-serial target event &rest args)` | Call each listener in registration order, waiting for each one. Returns nil. |
 | `(emit-parallel target event &rest args)` | Send to every listener at once and wait for all of them. Returns their values in registration order. |
@@ -129,5 +129,10 @@ The `meow/` prefix is reserved for events the core emits.
 
 `ready` runs again after a lost dependency comes back, and effects are not
 unwound in between, so a listener registered there is registered again. A
-service with dependencies should register in `%startup`, or keep the
-function `on` returned and release it in `dep-down`.
+service with dependencies should register its listeners in an
+[effect scope](effects.md#scopes) and release it in `dep-down`, as a
+[plugin](plugins.md) does, or keep the function `on` returned and release
+that instead.
+
+A listener is an effect labelled `(:on event)`, so `(effects s)` shows what
+a service is listening for.

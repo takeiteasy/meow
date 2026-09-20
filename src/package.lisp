@@ -19,7 +19,9 @@
    #:service-name #:service-registry #:service-context #:service-process #:service-ready-p #:service-status
    #:service-dependencies #:dependency
    #:metadata #:ready #:dep-down #:handle #:dispose #:update-config
-   #:effect #:with-effect
+   #:effect #:with-effect #:with-effect-scope #:effects
+   ;; plugins
+   #:function-plugin #:mount-function
    ;; config
    #:invalid-config #:invalid-config-service #:invalid-config-problems
    ;; failure model

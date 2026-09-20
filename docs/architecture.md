@@ -30,6 +30,8 @@ application-specific code.
   It can [isolate](isolation.md) names so its subtree has its own
   instances, and [intercept](intercept.md) config for it.
 - An [effect](effects.md) is a resource released when its service stops.
+  Effects can be labelled, listed, and grouped in a scope released on its
+  own.
 - An [agent](delegation.md) is a service delegated to a context by a
   parent process, which it reports back to when it finishes or exits.
 - A service's [config](config.md) is validated when the instance is

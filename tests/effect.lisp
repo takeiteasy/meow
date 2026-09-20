@@ -8,9 +8,10 @@
 
 (meow:defservice effectful-context (reporting meow:context) ())
 
-(defun acquire (service tag)
+(defun acquire (service tag &key label)
   (meow:effect service (lambda ()
-                         (lambda () (report service :released tag)))))
+                         (lambda () (report service :released tag)))
+               :label label))
 
 (defmethod meow:handle ((s effectful) message)
   (destructuring-bind (tag &optional arg) (if (consp message) message (list message))
@@ -20,8 +21,22 @@
       (:failing (meow:effect s (lambda () (lambda () (error "disposer failed"))))
        :ok)
       (:nil-effect (meow:effect s (constantly nil)) :ok)
-      (:with (meow:with-effect (resource s arg)
+      (:with (meow:with-effect (resource s arg :label :bound)
                (report s :released resource)))
+      (:labelled (push (cons arg (acquire s arg :label arg)) (releases s)) :ok)
+      (:effects (meow:effects s))
+      (:scope (multiple-value-bind (value release)
+                  (meow:with-effect-scope (s)
+                    (acquire s :inner-1)
+                    (multiple-value-bind (value release)
+                        (meow:with-effect-scope (s)
+                          (acquire s :nested))
+                      (declare (ignore value))
+                      (push (cons :nested release) (releases s)))
+                    (acquire s :inner-2)
+                    :scoped)
+                (push (cons :scope release) (releases s))
+                value))
       (:boom (error "boom")))))
 
 (defmethod meow:ready ((s effectful-context))
@@ -144,3 +159,73 @@ current process."
         (is (equal '(:stopping-status :late) (list status-tag late-tag)))
         (is (eq :stopping status))
         (is (typep late 'error))))))
+
+(test effects-list-labels-in-acquisition-order
+  (with-fresh-registry ()
+    (let ((p (start 'effectful)))
+      (meow:call p '(:labelled :first))
+      (meow:call p '(:acquire 2))
+      (meow:call p '(:labelled :third))
+      (is (equal '(:first nil :third) (meow:effects p)))
+      (meow:call p '(:release :first))
+      (is (equal '(nil :third) (meow:effects p)))
+      (drain)
+      (stop-and-join p))))
+
+(test effects-reads-directly-on-its-own-process
+  (with-fresh-registry ()
+    (let ((p (start 'effectful)))
+      (meow:call p '(:labelled :own))
+      (is (equal '(:own) (meow:call p :effects)))
+      (stop-and-join p))))
+
+(test with-effect-labels-its-effect
+  (with-fresh-registry ()
+    (let ((p (start 'effectful)))
+      (meow:call p '(:with :res))
+      (is (equal '(:bound) (meow:effects p)))
+      (drain)
+      (stop-and-join p))))
+
+(test a-context-lists-its-effects
+  (with-fresh-registry ()
+    (let ((ctx (meow:start-service
+                (make-instance 'effectful-context :reporter (meow:self)))))
+      (is (equal '(nil) (meow:effects ctx)))
+      (stop-and-join ctx))))
+
+(test a-listener-is-labelled-by-its-event
+  (with-fresh-registry ()
+    (let ((p (start 'listening :name :listener)))
+      (meow:call p '(:on :ping))
+      (is (equal '((:on :ping)) (meow:effects p)))
+      (stop-and-join p))))
+
+(test a-scope-releases-its-effects-newest-first
+  (with-fresh-registry ()
+    (let ((p (start 'effectful)))
+      (meow:call p '(:acquire :outer))
+      (is (eq :scoped (meow:call p :scope)))
+      (is (eql 4 (length (meow:effects p))))
+      (meow:call p '(:release :scope))
+      (is (equal '((effectful :released :inner-2)
+                   (effectful :released :nested)
+                   (effectful :released :inner-1))
+                 (drain)))
+      (is (eql 1 (length (meow:effects p))))
+      (meow:call p '(:release :scope))
+      (is (null (drain)))
+      (stop-and-join p)
+      (is (equal (list '(effectful :released :outer)
+                       (list 'effectful :disposed :shutdown p))
+                 (drain))))))
+
+(test a-nested-scope-releases-only-its-own
+  (with-fresh-registry ()
+    (let ((p (start 'effectful)))
+      (meow:call p :scope)
+      (meow:call p '(:release :nested))
+      (is (equal '((effectful :released :nested)) (drain)))
+      (is (eql 2 (length (meow:effects p))))
+      (stop-and-join p)
+      (drain))))

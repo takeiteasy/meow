@@ -176,27 +176,34 @@ problem strings."
   (unless (eq (self) (service-process service))
     (error "~a can only be used from its own process." service)))
 
+(defstruct (effect-cell (:constructor %make-effect-cell (disposer label scopes)))
+  disposer label scopes)
+
+(defvar *%effect-scopes* '()
+  "The scope tokens open on this process, innermost first.")
+
 (defun %release (service cell)
   (%require-own-process service)
   (with-slots (effects) service
     (when (member cell effects :test #'eq)
       (a:deletef effects cell :test #'eq)
-      (funcall (car cell)))))
+      (funcall (effect-cell-disposer cell)))))
 
-(defun effect (service acquire)
+(defun effect (service acquire &key label)
   "Call ACQUIRE, which returns a disposer or nil. The disposer runs when
-SERVICE stops, in reverse order of acquisition and before DISPOSE. Returns a
-function that runs the disposer early. Only callable from SERVICE's process."
+SERVICE stops, in reverse order of acquisition and before DISPOSE. LABEL
+names the effect for EFFECTS. Returns a function that runs the disposer
+early. Only callable from SERVICE's process."
   (%require-own-process service)
   (when (member (slot-value service 'status) '(:stopping :stopped))
     (error "~a is stopping." service))
   (a:if-let ((disposer (funcall acquire)))
-    (let ((cell (list disposer)))
+    (let ((cell (%make-effect-cell disposer label *%effect-scopes*)))
       (push cell (slot-value service 'effects))
       (lambda () (%release service cell)))
     (constantly nil)))
 
-(defmacro with-effect ((var service init-form) &body cleanup)
+(defmacro with-effect ((var service init-form &key label) &body cleanup)
   "Acquire INIT-FORM as an effect of SERVICE. CLEANUP, with VAR bound to the
 resource, is its disposer. Returns the resource and the release function."
   (a:with-gensyms (resource release)
@@ -205,8 +212,39 @@ resource, is its disposer. Returns the resource and the release function."
                              (lambda ()
                                (let ((,var ,init-form))
                                  (setf ,resource ,var)
-                                 (lambda () ,@cleanup))))))
+                                 (lambda () ,@cleanup)))
+                             :label ,label)))
        (values ,resource ,release))))
+
+(defun %release-scope (service token)
+  "Release the effects SERVICE acquired in scope TOKEN, newest first."
+  (%require-own-process service)
+  (dolist (cell (remove-if-not (lambda (cell)
+                                 (member token (effect-cell-scopes cell)))
+                               (slot-value service 'effects)))
+    (%release service cell)))
+
+(defmacro with-effect-scope ((service) &body body)
+  "Run BODY with the effects SERVICE acquires in it collected as one scope.
+Returns BODY's value and a function that releases them, newest first. An
+enclosing scope also releases them."
+  (a:with-gensyms (target token)
+    `(let ((,target ,service)
+           (,token (list '#:scope)))
+       (values (let ((*%effect-scopes* (cons ,token *%effect-scopes*)))
+                 ,@body)
+               (lambda () (%release-scope ,target ,token))))))
+
+(defun %effect-labels (service)
+  (reverse (mapcar #'effect-cell-label (slot-value service 'effects))))
+
+(defun effects (target)
+  "The labels of a service's live effects, oldest first, with nil for an
+unlabelled one. TARGET is a service or its process."
+  (if (and (typep target 'service) (eq (self) (service-process target)))
+      (%effect-labels target)
+      (values (call (if (typep target 'service) (service-process target) target)
+                    (list '%effects)))))
 
 (defun %reset (service)
   "Clear the runtime state of a stopped SERVICE so it can be started again."
@@ -223,7 +261,7 @@ resource, is its disposer. Returns the resource and the release function."
   (%set-status service :stopping)
   (with-slots (effects) service
     (loop while effects
-          do (let ((disposer (car (pop effects))))
+          do (let ((disposer (effect-cell-disposer (pop effects))))
                (handler-case (funcall disposer)
                  (error (e) (%teardown-failed e service))))))
   (dispose service reason)
@@ -298,6 +336,8 @@ it signalled."
   (cond ((%delivery-p message) (%deliver message))
         ((and (a:proper-list-p message) (eq (first message) '%update-config))
          (apply #'%apply-config service (rest message)))
+        ((and (a:proper-list-p message) (eq (first message) '%effects))
+         (%effect-labels service))
         (t (handle service message))))
 
 (defgeneric %dispatch (service message))
