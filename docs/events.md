@@ -126,3 +126,8 @@ The `meow/` prefix is reserved for events the core emits.
 
 `on` can only be called from the service's own process, for example in
 `ready` or `handle`.
+
+`ready` runs again after a lost dependency comes back, and effects are not
+unwound in between, so a listener registered there is registered again. A
+service with dependencies should register in `%startup`, or keep the
+function `on` returned and release it in `dep-down`.

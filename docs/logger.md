@@ -63,8 +63,12 @@ log at the default level.
 While a logger runs it owns
 [`*teardown-error-hook*`](processes.md#exit-hooks), so a failing disposer or
 exit hook becomes an `:error` record instead of a printed warning. It
-restores the previous value when it stops. With more than one logger, the
-last to start owns the hook.
+restores the previous value when it stops, before it drops its listeners, so
+later failures print again. With more than one logger, the last to start owns
+the hook.
+
+Records are delivered asynchronously, so one emitted in the moment before a
+logger stops can be dropped.
 
 ## Without a logger
 
