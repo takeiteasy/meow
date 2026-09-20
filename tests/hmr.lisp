@@ -29,7 +29,8 @@ CLASSES, so one test's sources aren't watched by the next."
     path))
 
 (defun load-source (path)
-  (load (compile-file path :verbose nil :print nil)))
+  "Load PATH so DEFSERVICE records it as a source."
+  (load path :verbose nil :print nil))
 
 (defun answering (class value)
   "A service CLASS whose HANDLE answers VALUE."
@@ -39,10 +40,11 @@ CLASSES, so one test's sources aren't watched by the next."
              ,value)))
 
 (defun watch (context &rest initargs)
-  "Mount a watcher that only scans when it is asked to. The default goes
-last, since the first of a repeated initarg wins."
+  "Mount a watcher that only scans when it is asked to, loading sources
+rather than compiling them. The defaults go last, since the first of a
+repeated initarg wins."
   (apply #'meow:mount context 'meow:watcher
-         (append initargs '(:interval 10))))
+         (append initargs '(:interval 10 :compile nil))))
 
 (defun watched-process (context name)
   (getf (find name (meow:children context)
@@ -64,6 +66,21 @@ last, since the first of a repeated initarg wins."
           (let ((new (watched-process ctx 'reloaded)))
             (is (not (eq new p)) "the child runs in a new process")
             (is (eql 2 (meow:call new :ask))))
+          (stop-and-join ctx))))))
+
+(test a-changed-source-is-recompiled-when-compile-is-on
+  (with-sources (compiled)
+    (let ((path (multiple-value-call #'write-source
+                  'compiled (answering 'compiled 1))))
+      (load-source path)
+      (with-fresh-registry ()
+        (let* ((ctx (start-context))
+               (w (watch ctx :files (list path) :compile t))
+               (p (meow:mount ctx 'compiled)))
+          (multiple-value-call #'write-source 'compiled (answering 'compiled 2))
+          (is (equal '(compiled) (meow:call w :scan :timeout 60)))
+          (is (eql 2 (meow:call (watched-process ctx 'compiled) :ask)))
+          (is (not (eq p (watched-process ctx 'compiled))))
           (stop-and-join ctx))))))
 
 (test an-unchanged-source-is-not-reloaded
@@ -102,7 +119,7 @@ last, since the first of a repeated initarg wins."
       (load-source path)
       (with-fresh-registry ()
         (let* ((ctx (start-context))
-               (w (meow:mount ctx 'own-watcher :interval 10
+               (w (meow:mount ctx 'own-watcher :interval 10 :compile nil
                                                :files (list path))))
           (write-source 'own-watcher
                         '(meow:defservice own-watcher (meow:watcher)
@@ -161,12 +178,14 @@ last, since the first of a repeated initarg wins."
       (load-source path)
       (with-fresh-registry ()
         (let ((ctx (start-context)))
-          (meow:mount ctx 'meow:watcher :files (list path) :interval 0.05)
+          (meow:mount ctx 'meow:watcher :files (list path)
+                                        :interval 0.05 :compile nil)
           (let ((p (meow:mount ctx 'polled)))
             (multiple-value-call #'write-source 'polled (answering 'polled 2))
             (is-true (eventually
                       (lambda ()
                         (let ((new (watched-process ctx 'polled)))
-                          (and new (not (eq new p)))))))
+                          (and new (not (eq new p)))))
+                      10))
             (is (eql 2 (meow:call (watched-process ctx 'polled) :ask))))
           (stop-and-join ctx))))))

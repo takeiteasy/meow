@@ -103,7 +103,7 @@
   (with-fresh-registry ()
     (let ((p (start 'ticker)))
       (meow:call p '(:boom 0.05))
-      (join p)
+      (is-true (eventually (lambda () (not (meow:process-alive-p p)))))
       (is (equal :error (first (meow:process-exit-reason p)))))))
 
 (test a-timer-cannot-be-set-from-another-process
