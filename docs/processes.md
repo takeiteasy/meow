@@ -41,8 +41,11 @@ process's thread.
 
 ```lisp
 (setf meow:*teardown-error-hook*
-      (lambda (condition source) (log-error "~a: ~a" source condition)))
+      (lambda (condition source) (format t "~a: ~a~%" source condition)))
 ```
+
+A running [logger](logger.md) claims the hook and turns these into `:error`
+records.
 
 ## Messages
 

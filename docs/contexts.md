@@ -38,8 +38,10 @@ service name, or nil for an unregistered child such as a
 
 ## Mount events
 
-A context announces each child on itself, so `*event-scope*` decides who
-hears it: `:down`, the default, reaches listeners in that subtree.
+A context announces each child on itself with `:up` scope, so the context,
+its ancestors, and services mounted directly in any of them hear it. An
+observer mounted at the root therefore sees the whole tree, and one mounted
+beside the child sees its siblings.
 
 | Event | Args |
 |---|---|

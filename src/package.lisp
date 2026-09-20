@@ -32,4 +32,7 @@
    #:agent #:agent-parent #:agent-ref #:delegate
    ;; events
    #:on #:once #:emit #:emit-serial #:emit-parallel #:bail #:waterfall
-   #:*event-timeout* #:*event-scope*))
+   #:*event-timeout* #:*event-scope*
+   ;; logger (meow/logger)
+   #:logger #:logger-stream #:logger-level #:logger-lifecycle #:log-level
+   #:log-message #:log-debug #:log-info #:log-warn #:log-error))

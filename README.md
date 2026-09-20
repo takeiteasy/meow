@@ -29,6 +29,7 @@ Runs on SBCL and ECL.
 - [Updating config](docs/update.md)
 - [Isolation](docs/isolation.md)
 - [Intercepts](docs/intercept.md)
+- [Logger](docs/logger.md)
 
 ## License
 

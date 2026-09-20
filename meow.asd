@@ -17,6 +17,16 @@
                (:file "agent"))
   :in-order-to ((test-op (test-op "meow/tests"))))
 
+(defsystem "meow/logger"
+  :description "A logging service for meow."
+  :author "George Watson"
+  :license "GPLv3"
+  :version "0.1.0"
+  :depends-on ("meow")
+  :pathname "src/"
+  :components ((:file "logger"))
+  :in-order-to ((test-op (test-op "meow/logger/tests"))))
+
 (defsystem "meow/tests"
   :depends-on ("meow" "fiveam")
   :pathname "tests/"
@@ -36,3 +46,11 @@
   :perform (test-op (o c)
              (unless (symbol-call :fiveam :run! :meow)
                (error "meow tests failed"))))
+
+(defsystem "meow/logger/tests"
+  :depends-on ("meow/logger" "meow/tests")
+  :pathname "tests/"
+  :components ((:file "logger"))
+  :perform (test-op (o c)
+             (unless (symbol-call :fiveam :run! :meow/logger)
+               (error "meow/logger tests failed"))))
