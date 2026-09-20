@@ -8,7 +8,7 @@ arrives as several events, the first of them on a half-written file.")
   (with-slots (events) watcher
     (cond ((not (member events '(:auto t nil)))
            (list (format nil "events: ~s is not :auto, t or nil" events)))
-          ((and (eq events t) (not (%watch-supported-p)))
+          ((and (eq events t) (not (trivial-wait.notify:native-p)))
            (list "events: this platform has no native filesystem events")))))
 
 (defservice watcher ()
@@ -209,7 +209,8 @@ if the watch cannot be opened, which keeps the watch already held."
   (with-slots (watched release) watcher
     (let* ((files (%watch-set watcher))
            (process (service-process watcher))
-           (watch (%watch files (lambda () (cast process :changed)))))
+           (watch (trivial-wait.notify:watch
+                   files (lambda () (cast process :changed)))))
       (when watch
         (a:when-let ((previous (shiftf release nil)))
           (funcall previous))
@@ -245,7 +246,7 @@ watched too."
   (dolist (file (%changed-files watcher))
     (%file-classes watcher file))
   (with-slots (events interval) watcher
-    (unless (and events (%watch-supported-p) (%arm watcher))
+    (unless (and events (trivial-wait.notify:native-p) (%arm watcher))
       (repeat watcher interval (lambda () (%tick watcher)) :label :watch))))
 
 (defmethod handle ((watcher watcher) message)

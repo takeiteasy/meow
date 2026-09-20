@@ -12,19 +12,20 @@ ln -s ~/git/meow ~/quicklisp/local-projects/meow
 (ql:quickload :meow)
 ```
 
-Dependencies: `bordeaux-threads` (bt2 API), `alexandria`, `closer-mop` and
-[`trivial-high-precision-timer`](https://github.com/takeiteasy/trivial-high-precision-timer),
-which is not in a Quicklisp dist and needs a local project of its own:
+Dependencies: `bordeaux-threads` (bt2 API), `alexandria` and `closer-mop`
+from Quicklisp, plus two that need local projects of their own:
 
 ```sh
 git clone https://github.com/takeiteasy/trivial-high-precision-timer \
     ~/quicklisp/local-projects/trivial-high-precision-timer
+git clone https://github.com/takeiteasy/trivial-wait \
+    ~/quicklisp/local-projects/trivial-wait
 ```
 
 The [logger](logger.md) and the source [watcher](hmr.md) load separately,
 as `meow/logger` and `meow/hmr`. Everything else, including the config-file
-[loader](loader.md), is in `meow` itself. `meow/hmr` uses CFFI for native
-filesystem events; `meow` itself is portable Common Lisp.
+[loader](loader.md), is in `meow` itself. `meow/hmr` watches through
+`trivial-wait`; `meow` itself is portable Common Lisp.
 
 ## Tests
 

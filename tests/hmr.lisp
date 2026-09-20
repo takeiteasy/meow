@@ -229,7 +229,7 @@ recorded as the file's starting state."
           (stop-and-join ctx))))))
 
 (test native-events-scan-without-waiting-for-the-poll
-  (if (not (meow::%watch-supported-p))
+  (if (not (trivial-wait.notify:native-p))
       (skip "this platform has no native filesystem events")
       (with-sources (evented)
         (let ((path (multiple-value-call #'write-source
@@ -258,7 +258,7 @@ recorded as the file's starting state."
               (stop-and-join ctx))))))) 
 
 (test a-source-added-to-a-watched-directory-is-watched-too
-  (if (not (meow::%watch-supported-p))
+  (if (not (trivial-wait.notify:native-p))
       (skip "this platform has no native filesystem events")
       (with-sources (added)
         (with-fresh-registry ()

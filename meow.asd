@@ -38,11 +38,9 @@
   :author "George Watson"
   :license "GPLv3"
   :version "0.1.0"
-  :depends-on ("meow" "cffi")
+  :depends-on ("meow" "trivial-wait/notify")
   :pathname "src/"
-  :serial t
-  :components ((:file "watch")
-               (:file "hmr"))
+  :components ((:file "hmr"))
   :in-order-to ((test-op (test-op "meow/hmr/tests"))))
 
 (defsystem "meow/tests"

@@ -34,8 +34,10 @@ moves, so saving a file unchanged reloads nothing.
 ## How it watches
 
 Where the platform has native filesystem events — kqueue on macOS — the
-watcher waits on them and scans as soon as a watched file, or the directory
-holding it, is written. Elsewhere it scans every `:interval` seconds.
+watcher waits on them through
+[trivial-wait](https://github.com/takeiteasy/trivial-wait) and scans as soon
+as a watched file, or the directory holding it, is written. Elsewhere it
+scans every `:interval` seconds.
 
 `:events` picks: `:auto` uses events where they exist, `t` requires them
 and is an [invalid config](config.md#invalid-config) where they don't, and

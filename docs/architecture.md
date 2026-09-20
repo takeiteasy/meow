@@ -16,7 +16,7 @@ application-specific code.
 │ process · mailbox · call/cast              │  built
 ├────────────────────────────────────────────┤
 │ bordeaux-threads · alexandria · closer-mop │
-│ trivial-high-precision-timer               │
+│ trivial-high-precision-timer · trivial-wait│
 └────────────────────────────────────────────┘
 ```
 
