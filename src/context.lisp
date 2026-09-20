@@ -25,6 +25,31 @@
         when problem
           collect (format nil "children: ~s ~a" spec problem)))
 
+(defun %spec-shape-p (spec)
+  (and (consp spec) (symbolp (first spec)) (a:proper-list-p spec)
+       (evenp (length (rest spec)))))
+
+(defun %spec-key (spec)
+  "The identity SPEC's entry is diffed under, or nil if it has none."
+  (%initarg-name (first spec) (rest spec)))
+
+(defun %key-problems (specs)
+  "Problems with the classes and keys of SPECS, which %SPEC-PROBLEMS has
+already reported on the shape of."
+  (let ((keys '()))
+    (loop for spec in specs
+          when (and (%spec-shape-p spec) (first spec))
+            append (cond ((not (find-class (first spec) nil))
+                          (list (format nil "children: there is no class ~s"
+                                        (first spec))))
+                         ((not (%spec-key spec))
+                          (list (format nil "children: ~s needs a :name"
+                                        spec)))
+                         ((member (%spec-key spec) keys :test #'equal)
+                          (list (format nil "children: ~s is named ~s twice"
+                                        (first spec) (%spec-key spec))))
+                         (t (push (%spec-key spec) keys) '())))))
+
 (defun %intercept-problems (context)
   (loop for entry in (slot-value context 'intercept)
         unless (and (consp entry) (symbolp (first entry))
@@ -411,6 +436,70 @@ defaults. It is removed if that fails."
       (a:deletef (slot-value context 'children) child)
       (list :error e))))
 
+(defun %spec-args (spec)
+  "SPEC's initargs, without its mount options."
+  (apply #'a:remove-from-plist (rest spec)
+         (%plist-keys (%mount-options (rest spec)))))
+
+(defun %apply-spec (context child spec)
+  "Apply SPEC's initargs to CHILD, in place if it keeps every initarg it has
+and its process accepts them, otherwise by restarting it with a fresh
+instance. Returns (:ok process) or (:error condition)."
+  (handler-case
+      (let* ((args (%spec-args spec))
+             (config (%config context (child-class child) args)))
+        (%set-mount-options child (%mount-options (rest spec)))
+        (if (equal config (child-config child))
+            (list :ok (child-process child))
+            (progn
+              (apply #'make-instance (child-class child) config)
+              (if (subsetp (%plist-keys (child-config child))
+                           (%plist-keys config))
+                  (%apply-update context child (child-config child) config args)
+                  (progn (setf (child-initargs child) args)
+                         (%replace-child context child))))))
+    (error (e) (list :error e))))
+
+(defun %apply-children (context old new)
+  "Mount, unmount and update CONTEXT's children so its subtree matches NEW,
+the specs it held OLD. Returns (values report errors), the report naming
+what changed."
+  (let ((mounted '()) (updated '()) (unmounted '()) (errors '()))
+    (flet ((note (result key list)
+             (if (eq (first result) :error)
+                 (push (second result) errors)
+                 (push key list))
+             list))
+      (dolist (spec old)
+        (let ((key (%spec-key spec)))
+          (unless (find key new :key #'%spec-key :test #'equal)
+            (%unmount context key nil)
+            (push key unmounted))))
+      (dolist (spec new)
+        (let* ((key (%spec-key spec))
+               (child (%find-child context key))
+               (previous (find key old :key #'%spec-key :test #'equal)))
+          (cond ((and child (eq (child-class child) (first spec)))
+                 (unless (equal (rest spec) (rest previous))
+                   (setf updated (note (%apply-spec context child spec)
+                                       key updated))))
+                (t
+                 (when child
+                   (%unmount context key nil))
+                 (setf mounted (note (%mount context (first spec) (rest spec))
+                                     key mounted))))))
+      (setf (slot-value context 'specs) new)
+      (values (list :mounted (nreverse mounted)
+                    :updated (nreverse updated)
+                    :unmounted (nreverse unmounted))
+              (nreverse errors)))))
+
+(defun %adoptable-p (old new)
+  "True when a :CHILDREN change from OLD to NEW can be diffed: every entry
+on both sides has a name of its own to be matched under."
+  (or (equal old new)
+      (not (or (%key-problems old) (%key-problems new)))))
+
 (defun %changed-configs (context)
   "(child . config) for each running child whose intercepted config changed."
   (loop for child in (slot-value context 'children)
@@ -471,12 +560,19 @@ the errors from applying them."
 
 (defun %warn-errors (context errors)
   (dolist (e errors)
-    (warn "Applying intercepts under ~a failed: ~a" context e)))
+    (warn "Applying config under ~a failed: ~a" context e)))
 
 (defmethod update-config ((context context) old new)
-  (when (equal (a:remove-from-plist old :intercept)
-               (a:remove-from-plist new :intercept))
-    (%warn-errors context (%set-intercept context (getf new :intercept)))
+  (when (and (equal (a:remove-from-plist old :intercept :children)
+                    (a:remove-from-plist new :intercept :children))
+             (%adoptable-p (getf old :children) (getf new :children)))
+    ;; Intercepts first, so a child mounted below sees them as it starts.
+    (unless (equal (getf old :intercept) (getf new :intercept))
+      (%warn-errors context (%set-intercept context (getf new :intercept))))
+    (unless (equal (getf old :children) (getf new :children))
+      (%warn-errors context (nth-value 1 (%apply-children
+                                          context (getf old :children)
+                                          (getf new :children)))))
     t))
 
 (defun %restart-p (restart reason)

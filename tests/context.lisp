@@ -956,3 +956,52 @@ killed if :infinity were ignored."
       (is (equal (list (meow:lookup 'tunable)) (mapcar #'second (child-summary inner))))
       (is (not (eq p (meow:lookup 'tunable))) "tunable declined in place")
       (stop-and-join ctx))))
+
+(test updating-children-is-applied-in-place
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (inner (meow:mount ctx 'meow:context :name :inner
+                              :children '((live-tunable :level 1)
+                                          (tunable :name :gone))))
+           (p (child-process inner 'live-tunable))
+           (gone (child-process inner :gone)))
+      (is (eq inner (meow:update ctx :inner
+                                 :children '((live-tunable :level 2)
+                                             (tunable :name :added)))))
+      (is (eq p (child-process inner 'live-tunable)) "kept and updated")
+      (is (= 2 (meow:call p :level)))
+      (is (null (child-process inner :gone)) "the entry that went is unmounted")
+      (is-false (meow:process-alive-p gone))
+      (is-true (child-process inner :added) "the entry that came is mounted")
+      (stop-and-join ctx))))
+
+(test updating-children-reaches-a-nested-entry
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (inner (meow:mount ctx 'meow:context :name :inner
+                              :children '((meow:context :name :deep
+                                           :children ((live-tunable :level 1)))
+                                          (tunable :name :sibling))))
+           (deep (child-process inner :deep))
+           (p (child-process deep 'live-tunable))
+           (sibling (child-process inner :sibling)))
+      (meow:update ctx :inner
+                   :children '((meow:context :name :deep
+                                :children ((live-tunable :level 2)))
+                               (tunable :name :sibling)))
+      (is (eq deep (child-process inner :deep)))
+      (is (eq p (child-process deep 'live-tunable)))
+      (is (= 2 (meow:call p :level)))
+      (is (eq sibling (child-process inner :sibling)) "untouched entry left alone")
+      (stop-and-join ctx))))
+
+(test children-without-names-reload-the-context
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (inner (meow:mount ctx 'meow:context :name :inner
+                              :children '((tunable :name nil :level 1))))
+           (new (meow:update ctx :inner
+                             :children '((tunable :name nil :level 2)))))
+      (is (not (eq inner new)) "an entry with no name cannot be diffed")
+      (is (= 2 (meow:call (child-process new nil) :level)))
+      (stop-and-join ctx))))

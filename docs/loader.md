@@ -60,7 +60,8 @@ Unlike `update`, the entry's initargs replace the child's rather than
 merging into them: the file says what the child's config is.
 
 A change inside a nested entry reaches that entry as changed `:children`,
-which reloads that context and remounts its subtree.
+which the nested context [adopts](contexts.md#adopting-children) the same
+way, so what the change did not name keeps running.
 
 An entry that fails to mount or update is reported as a warning and the
 rest are still applied; it is tried again the next time the file changes. A file that cannot be read or doesn't validate is

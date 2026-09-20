@@ -231,3 +231,23 @@ runs on a process of its own, which sees the global value.")
                                                    :file (namestring *config*))))
           (is (equal '(:nested) (mounted-names loader))))
         (stop-and-join ctx)))))
+
+(test a-change-inside-a-nested-entry-keeps-its-subtree
+  (with-config
+    (write-config '((meow:context :name :nested
+                     :children ((tuned :level 1) (provider)))))
+    (with-fresh-registry ()
+      (let* ((ctx (start-context))
+             (loader (load-config ctx))
+             (nested (child-process loader :nested))
+             (tuned (child-process nested 'tuned))
+             (provider (child-process nested 'provider)))
+        (write-config '((meow:context :name :nested
+                         :children ((tuned :level 2) (provider)))))
+        (is (equal '(:mounted nil :updated (:nested) :unmounted nil)
+                   (meow:call loader :load)))
+        (is (eq nested (child-process loader :nested)))
+        (is (eq tuned (child-process nested 'tuned)))
+        (is (eql 2 (meow:call tuned :ask)))
+        (is (eq provider (child-process nested 'provider)))
+        (stop-and-join ctx)))))

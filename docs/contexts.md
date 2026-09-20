@@ -76,6 +76,27 @@ If a declared child fails to start, the context's start fails with that
 error. Malformed specs signal `invalid-config`. A [loader](loader.md) takes
 the same specs from a file and re-applies them as it changes.
 
+### Adopting children
+
+`:children` can be [updated](update.md) while the context runs. The new
+specs are diffed against the ones it holds, under each entry's name:
+
+| Entry | |
+|---|---|
+| new name | mounted |
+| name gone | unmounted |
+| same name, another class | unmounted and mounted again |
+| changed initargs | [updated](update.md), so the child can keep running |
+
+An entry that is itself a context adopts its own `:children` the same way,
+so a change deep in a tree only touches what it names. An entry without a
+name of its own can't be diffed, so such a change reloads the context
+instead.
+
+The context has the child's `shutdown` seconds to finish adopting; one
+that stops slow children wants a `:shutdown` long enough for them, or it is
+reloaded instead.
+
 ## Restarts
 
 A restart makes a fresh instance from `class` and `initargs`.

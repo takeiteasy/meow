@@ -44,3 +44,9 @@ handling no other messages.
 A child waiting to restart, or one that exits before answering, just
 stores the new initargs, and its restart uses them. A child can't update
 itself: that would deadlock, so `update` signals an error instead.
+
+## Contexts
+
+A [context](contexts.md) applies `:intercept` and `:children` in place.
+Intercepts are applied first, so a child mounted by the same change sees
+them as it starts. See [adopting children](contexts.md#adopting-children).
