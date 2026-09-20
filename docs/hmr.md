@@ -21,7 +21,8 @@ Without `:files`, every file a `defservice` was compiled from. `defservice`
 records that file, so no configuration is needed.
 
 `:files` replaces that set with pathnames of your own. A directory stands
-for every `.lisp` file under it.
+for every `.lisp` file under it, and a file added to one later is watched
+and loaded as well.
 
 ```lisp
 (mount *app* 'watcher :files '(#p"src/services/"))

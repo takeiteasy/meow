@@ -46,6 +46,11 @@ repeated initarg wins."
   (apply #'meow:mount context 'meow:watcher
          (append initargs '(:interval 10 :compile nil :events nil))))
 
+(defun armed (watcher)
+  "Wait until WATCHER holds its native watch. A write before that is only
+recorded as the file's starting state."
+  (eventually (lambda () (member :watch (meow:effects watcher))) 5))
+
 (defun watched-process (context name)
   (getf (find name (meow:children context)
               :key (lambda (child) (getf child :name)))
@@ -231,9 +236,11 @@ repeated initarg wins."
                       'evented (answering 'evented 1))))
           (load-source path)
           (with-fresh-registry ()
-            (let ((ctx (start-context)))
-              (meow:mount ctx 'meow:watcher :files (list path) :events t
-                                            :interval 60 :compile nil)
+            (let* ((ctx (start-context))
+                   (w (meow:mount ctx 'meow:watcher :files (list path)
+                                                    :events t :interval 60
+                                                    :compile nil)))
+              (is-true (armed w) "the watch is armed before the write")
               (let ((p (meow:mount ctx 'evented)))
                 (multiple-value-call #'write-source
                   'evented (answering 'evented 2))
@@ -247,4 +254,30 @@ repeated initarg wins."
                                    (eql 2 (meow:call new :ask)))))
                           10)
                          "the write was seen without a poll"))
+              (is (= 1 (count :watch (meow:effects w))) "one watch is held")
               (stop-and-join ctx))))))) 
+
+(test a-source-added-to-a-watched-directory-is-watched-too
+  (if (not (meow::%watch-supported-p))
+      (skip "this platform has no native filesystem events")
+      (with-sources (added)
+        (with-fresh-registry ()
+          (let* ((ctx (start-context))
+                 (w (meow:mount ctx 'meow:watcher :files (list *sources*)
+                                                  :events t :interval 60
+                                                  :compile nil)))
+            (is-true (armed w) "the watch is armed before the write")
+            (multiple-value-call #'write-source 'added (answering 'added 1))
+            (is-true (eventually (lambda () (find-class 'added nil)) 10)
+                     "the directory event loaded the new source")
+            (let ((p (meow:mount ctx 'added)))
+              (multiple-value-call #'write-source 'added (answering 'added 2))
+              (is-true (eventually
+                        (lambda ()
+                          (let ((new (watched-process ctx 'added)))
+                            (and new (not (eq new p))
+                                 (eql 2 (meow:call new :ask)))))
+                        10)
+                       "the added source is watched in its own right"))
+            (is (= 1 (count :watch (meow:effects w))) "one watch is held")
+            (stop-and-join ctx))))))

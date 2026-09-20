@@ -23,12 +23,15 @@ arrives as several events, the first of them on a half-written file.")
    (pending :initform nil))
   (:validate %watcher-problems))
 
+(defun %directory-p (path)
+  (let ((path (pathname path)))
+    (not (or (pathname-name path) (pathname-type path)))))
+
 (defun %expand-source (path)
   "PATH itself, or every .lisp file under it if it names a directory."
-  (let ((path (pathname path)))
-    (if (or (pathname-name path) (pathname-type path))
-        (list path)
-        (directory (merge-pathnames "**/*.lisp" path)))))
+  (if (%directory-p path)
+      (directory (merge-pathnames "**/*.lisp" (pathname path)))
+      (list (pathname path))))
 
 (defun %truename (path)
   "PATH resolved, so a watched file and a recorded source name it the same
@@ -191,12 +194,20 @@ Returns the names reloaded."
       (emit watcher :meow/reloaded (mapcar #'car touched) names))
     names))
 
+(defun %watch-set (watcher)
+  "The files to watch, and the directories the watcher was pointed at, so a
+source added to one is seen as well."
+  (append (%watched-files watcher)
+          (loop for path in (slot-value watcher 'files)
+                when (%directory-p path)
+                  collect (%truename path))))
+
 (defun %arm (watcher)
   "Watch the current file set for native events, replacing any earlier
 watch. Each event schedules a scan on WATCHER's process. Returns t, or nil
-if the watch cannot be opened."
+if the watch cannot be opened, which keeps the watch already held."
   (with-slots (watched release) watcher
-    (let* ((files (%watched-files watcher))
+    (let* ((files (%watch-set watcher))
            (process (service-process watcher))
            (watch (%watch files (lambda () (cast process :changed)))))
       (when watch
@@ -212,7 +223,7 @@ watched too."
   (with-slots (watched release) watcher
     (when (and release
                (not (equal watched (mapcar #'namestring
-                                           (%watched-files watcher)))))
+                                           (%watch-set watcher)))))
       (%arm watcher))))
 
 (defun %tick (watcher)
@@ -228,7 +239,7 @@ watched too."
                          (lambda ()
                            (setf pending nil)
                            (%tick watcher))
-                         :label :watch))))
+                         :label :scan))))
 
 (defmethod ready ((watcher watcher))
   (dolist (file (%changed-files watcher))
