@@ -50,3 +50,9 @@ class.
 
 Processes that held the old process object see it as exited. Look the
 service up by name to get the new one.
+
+## Automatically
+
+The [`watcher`](hmr.md) service does this for a whole subtree: it watches
+the source files, recompiles the ones that change and reloads the children
+holding the classes they define.

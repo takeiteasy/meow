@@ -3,7 +3,7 @@
 set -e
 
 QL="${QUICKLISP_SETUP:-$HOME/quicklisp/setup.lisp}"
-RUN="(progn (ql:quickload '(:meow/tests :meow/logger/tests) :silent t) (asdf:test-system :meow) (asdf:test-system :meow/logger))"
+RUN="(progn (ql:quickload '(:meow/tests :meow/logger/tests :meow/hmr/tests) :silent t) (asdf:test-system :meow) (asdf:test-system :meow/logger) (asdf:test-system :meow/hmr))"
 
 case "${1:-sbcl}" in
     sbcl) exec sbcl --non-interactive --no-userinit --load "$QL" --eval "$RUN" ;;

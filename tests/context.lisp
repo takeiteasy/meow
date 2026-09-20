@@ -596,7 +596,7 @@ killed if :infinity were ignored."
     (let* ((ctx (start-context :restart-delay 0.3))
            (p (meow:mount ctx 'provider :restart :permanent)))
       (is (equal (list :name 'provider :process p :restart :permanent
-                       :state :running :restart-in nil)
+                       :state :running :restart-in nil :class 'provider)
                  (first (meow:children ctx))))
       (meow:stop p :killed)
       (let ((child (eventually (lambda ()
@@ -606,8 +606,8 @@ killed if :infinity were ignored."
         (is (eq p (getf child :process)))
         (is (< 0 (getf child :restart-in) 0.3001)))
       (let ((p2 (restarted ctx 'provider p)))
-        (is (equal (list :state :running :restart-in nil)
-                   (last (first (meow:children ctx)) 4)))
+        (is (equal (list :state :running :restart-in nil :class 'provider)
+                   (last (first (meow:children ctx)) 6)))
         (is-true p2))
       (stop-and-join ctx))))
 

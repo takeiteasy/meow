@@ -7,7 +7,7 @@ application-specific code.
 
 ```
 ┌────────────────────────────────────────────┐
-│ hot reload · config                       │  built
+│ hot reload · source watching · config      │  built
 │ events · timers                            │  built
 │ effects · delegation (agents)              │  built
 │ context · supervisor                       │  built
@@ -40,7 +40,8 @@ application-specific code.
 - A service's [config](config.md) is validated when the instance is
   built.
 - [Reload](reload.md) restarts a context's child in a new process, keeping
-  its instance.
+  its instance. A [watcher](hmr.md) does that for a subtree whenever a
+  source file changes.
 - A [timer](timers.md) runs a function on its service's process later, once
   or on a period, and is cancelled when the service stops. One thread
   schedules them all.

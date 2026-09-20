@@ -31,6 +31,16 @@
   :components ((:file "logger"))
   :in-order-to ((test-op (test-op "meow/logger/tests"))))
 
+(defsystem "meow/hmr"
+  :description "A source-watching hot reloader for meow."
+  :author "George Watson"
+  :license "GPLv3"
+  :version "0.1.0"
+  :depends-on ("meow")
+  :pathname "src/"
+  :components ((:file "hmr"))
+  :in-order-to ((test-op (test-op "meow/hmr/tests"))))
+
 (defsystem "meow/tests"
   :depends-on ("meow" "fiveam")
   :pathname "tests/"
@@ -60,3 +70,11 @@
   :perform (test-op (o c)
              (unless (symbol-call :fiveam :run! :meow/logger)
                (error "meow/logger tests failed"))))
+
+(defsystem "meow/hmr/tests"
+  :depends-on ("meow/hmr" "meow/tests" "uiop")
+  :pathname "tests/"
+  :components ((:file "hmr"))
+  :perform (test-op (o c)
+             (unless (symbol-call :fiveam :run! :meow/hmr)
+               (error "meow/hmr tests failed"))))

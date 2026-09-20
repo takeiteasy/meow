@@ -107,8 +107,8 @@ deadlock, so an error is signalled instead."
         result)))
 
 (defun children (context)
-  "A plist (:name :process :restart :state :restart-in) for each child, in
-mount order. STATE is :restarting while the child waits out its restart
+  "A plist (:name :process :restart :state :restart-in :class) for each child,
+in mount order. STATE is :restarting while the child waits out its restart
 delay, with RESTART-IN the seconds left, and :running otherwise."
   (%context-call context (list '%children)))
 
@@ -556,7 +556,8 @@ delay, doubled for each earlier restart within period up to the max if set."
           :restart (child-restart child)
           :state (if pending :restarting :running)
           :restart-in (and pending
-                           (float (max 0 (- (first pending) (%now))) 1.0)))))
+                           (float (max 0 (- (first pending) (%now))) 1.0))
+          :class (child-class child))))
 
 (defmethod handle ((context context) message)
   (multiple-value-bind (tag a b c)

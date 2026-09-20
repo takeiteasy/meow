@@ -28,6 +28,7 @@ Runs on SBCL and ECL.
 - [Timers](docs/timers.md)
 - [Config](docs/config.md)
 - [Hot reload](docs/reload.md)
+- [Watching sources](docs/hmr.md)
 - [Updating config](docs/update.md)
 - [Isolation](docs/isolation.md)
 - [Intercepts](docs/intercept.md)

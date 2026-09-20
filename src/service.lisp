@@ -92,6 +92,9 @@ and the :VALIDATE functions find no problems."
 (defmethod reinitialize-instance :after ((service service) &key)
   (%validate service))
 
+(defvar *%service-sources* (make-hash-table)
+  "The source file each DEFSERVICE class was defined in, for the watcher.")
+
 (defun %remove-option-method (function qualifiers class-name)
   "Remove the method a DEFSERVICE option defined, once the option is gone."
   (let* ((function (fdefinition function))
@@ -106,7 +109,10 @@ and the :VALIDATE functions find no problems."
 and (:validate function), which takes the instance and returns a list of
 problem strings."
   (flet ((option (key) (assoc key options)))
-    (let ((initargs (rest (option :default-initargs))))
+    ;; The source is read here rather than in the expansion: at load time
+    ;; *LOAD-TRUENAME* is the fasl, not the file it was compiled from.
+    (let ((initargs (rest (option :default-initargs)))
+          (source (or *compile-file-truename* *load-truename*)))
       `(progn
          (defclass ,name (,@direct-superclasses service)
            ,direct-slots
@@ -119,6 +125,8 @@ problem strings."
                                   '(:depends-on :name :validate
                                     :default-initargs)))
                         options))
+         ,@(when source
+             `((setf (gethash ',name *%service-sources*) ,source)))
          ,(if (option :depends-on)
               `(defmethod service-dependencies ((service ,name))
                  ',(rest (option :depends-on)))

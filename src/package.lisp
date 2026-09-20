@@ -37,6 +37,8 @@
    ;; events
    #:on #:once #:emit #:emit-serial #:emit-parallel #:bail #:waterfall
    #:*event-timeout* #:*event-scope*
+   ;; hot reload (meow/hmr)
+   #:watcher
    ;; logger (meow/logger)
    #:logger #:logger-stream #:logger-level #:logger-lifecycle #:log-level
    #:log-message #:log-debug #:log-info #:log-warn #:log-error))
