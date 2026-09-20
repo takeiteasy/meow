@@ -22,6 +22,7 @@ tree.
 | `(emit-serial target event &rest args)` | Call each listener in registration order, waiting for each one. Returns nil. |
 | `(emit-parallel target event &rest args)` | Send to every listener at once and wait for all of them. Returns their values in registration order. |
 | `(bail target event &rest args)` | Call listeners in order until one returns non-nil, and return that value. Returns nil if none does. |
+| `(waterfall target event inner &rest args)` | Run the listeners as a chain wrapped around `inner`. Returns what the chain returns. |
 
 Events compare with `equal`. The emitter can be any thread.
 
@@ -64,6 +65,36 @@ out counts as returning nil. So does one whose process is already waiting
 on the emitter, a [deadlock](processes.md#deadlocks), and it isn't sent the
 event. A timed-out listener still runs, but its result is discarded. A service that emits an event it
 listens for itself runs its own listener directly.
+
+## Waterfall
+
+`waterfall` runs the listeners as a middleware chain around work the emitter
+supplies. Each listener is called with the args plus a `next` function, and the
+innermost `next` calls `inner`.
+
+```lisp
+(meow:on s :request (lambda (path next)
+                      (let ((start (get-internal-real-time)))
+                        (prog1 (funcall next path)
+                          (record-timing path start)))))
+
+(waterfall *registry* :request #'serve "/index")
+```
+
+`next` with no arguments keeps the current ones; with arguments it replaces them
+for the rest of the chain and for `inner`. A listener that returns without
+calling `next` ends the chain, `inner` never runs, and its value is what
+`waterfall` returns.
+
+A listener that cannot have run is skipped and the chain continues, so `inner`
+still runs: one released before its delivery arrived, and one whose process is
+already waiting on the caller. A listener that times out, errors or exits has
+already started, may have run the rest of the chain, and so ends it with nil
+rather than being retried.
+
+`inner` runs on the innermost listener's process, or on the emitter's when there
+are no listeners. `*event-timeout*` bounds each hop, and a hop covers everything
+inside it, so the outermost listener's timeout is the budget for the whole chain.
 
 ## Lifetime
 

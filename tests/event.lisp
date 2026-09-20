@@ -17,6 +17,21 @@ signals an error; otherwise it is the listener's value."
                          (error "listener crashed")
                          result))))
 
+(defun link-for (s event &key tag result delay before)
+  "Listen for EVENT as a waterfall link, reporting (name :link args). Calls
+NEXT with TAG appended, or returns RESULT without calling it if one is given.
+BEFORE runs first; DELAY sleeps after the rest of the chain has returned."
+  (meow:on s event
+           (lambda (&rest args)
+             (let ((next (car (last args)))
+                   (args (butlast args)))
+               (report s :link args)
+               (when before (funcall before))
+               (prog1 (if result
+                          result
+                          (apply next (append args (and tag (list tag)))))
+                 (when delay (sleep delay)))))))
+
 (defmethod meow:handle ((s listening) message)
   (destructuring-bind (tag &rest args) message
     (ecase tag
@@ -37,7 +52,13 @@ signals an error; otherwise it is the listener's value."
       (:relay (destructuring-bind (event emitter) args
                 (meow:on s event (lambda () (funcall emitter s))))
        :ok)
-      (:bail (apply #'meow:bail s args)))))
+      (:bail (apply #'meow:bail s args))
+      (:link (push (cons (first args) (apply #'link-for s args)) (releases s))
+       :ok)
+      (:waterfall (destructuring-bind (event &rest rest) args
+                    (apply #'meow:waterfall s event
+                           (lambda (&rest inner) (list* :inner inner))
+                           rest))))))
 
 (defun start-listener (name &rest on-args)
   (let ((p (start 'listening :name name)))
@@ -299,3 +320,109 @@ other{ :d } and an unmounted :top, each listening for :ping."
       (is (< (- (now) start) 1))
       (is (null (drain)))
       (stop-and-join app))))
+
+;;; Waterfall
+
+(defun start-link (name &rest link-args)
+  (let ((p (start 'listening :name name)))
+    (meow:call p (list* :link link-args))
+    p))
+
+(test waterfall-runs-listeners-as-a-chain
+  (with-fresh-registry (r)
+    (let ((a (start-link :a :step :tag :a))
+          (b (start-link :b :step :tag :b))
+          (inner '()))
+      (is (eq :done (meow:waterfall r :step
+                                    (lambda (&rest args)
+                                      (setf inner args)
+                                      :done)
+                                    1)))
+      (is (equal '(1 :a :b) inner) "each link's args reach the next and inner")
+      (is (equal '((:a :link (1)) (:b :link (1 :a))) (drain)))
+      (stop-and-join a)
+      (stop-and-join b))))
+
+(test waterfall-without-listeners-calls-inner-on-the-emitter
+  (with-fresh-registry (r)
+    (let ((process nil))
+      (is (eq :done (meow:waterfall r :step
+                                    (lambda (x)
+                                      (is (eql 1 x))
+                                      (setf process (meow:self))
+                                      :done)
+                                    1)))
+      (is (eq (meow:self) process)))))
+
+(test waterfall-link-that-skips-next-ends-the-chain
+  (with-fresh-registry (r)
+    (let ((a (start-link :a :step :result :stopped))
+          (b (start-link :b :step :tag :b))
+          (ran nil))
+      (is (eq :stopped (meow:waterfall r :step (lambda (&rest args)
+                                                 (declare (ignore args))
+                                                 (setf ran t))
+                                       1)))
+      (is (null ran) "inner is not reached")
+      (is (equal '((:a :link (1))) (drain)) "later links are not reached")
+      (stop-and-join a)
+      (stop-and-join b))))
+
+(test waterfall-skips-a-link-released-mid-chain
+  (with-fresh-registry (r)
+    (let* ((later nil)
+           (a (start-link :a :step :tag :a
+                          :before (lambda () (meow:call later '(:release :step)))))
+           (b (setf later (start-link :b :step :tag :b))))
+      (is (equal '(:inner 1 :a)
+                 (meow:waterfall r :step (lambda (&rest args) (list* :inner args))
+                                 1))
+          "the released link is skipped and inner still runs")
+      (is (equal '((:a :link (1))) (drain)))
+      (stop-and-join a)
+      (stop-and-join b))))
+
+(test waterfall-inner-runs-once-when-an-outer-link-times-out
+  (with-fresh-registry (r)
+    (let* ((meow:*event-timeout* 0.1)
+           (runs 0)
+           (a (start-link :a :step :tag :a :delay 0.5))
+           (start (now)))
+      (is (null (meow:waterfall r :step (lambda (&rest args)
+                                          (declare (ignore args))
+                                          (incf runs))
+                                1))
+          "a timed-out link ends the chain")
+      (is (waited-p 0.1 (- (now) start)))
+      (is (< (- (now) start) 0.5) "the emitter does not wait for the link")
+      (is (eql 1 runs) "inner is not run a second time")
+      (sleep 0.5)
+      (stop-and-join a))))
+
+;;; Deadlock detection
+
+(test waterfall-chain-is-not-a-deadlock
+  (with-fresh-registry (r)
+    (let ((a (start-link :a :step :tag :a))
+          (b (start-link :b :step :tag :b))
+          (c (start-link :c :step :tag :c)))
+      (is (equal '(:inner 1 :a :b :c)
+                 (meow:waterfall r :step (lambda (&rest args) (list* :inner args))
+                                 1)))
+      (is (null (waits-on a (meow:self))) "the chain leaves no wait edge behind")
+      (stop-and-join a)
+      (stop-and-join b)
+      (stop-and-join c))))
+
+(test waterfall-link-back-to-the-emitter-is-refused
+  (with-fresh-registry ()
+    (let* ((y (start-link :y :step :tag :y))
+           (x (start 'listening :name :x))
+           (start (now)))
+      (meow:call x '(:link :step :tag :x))
+      (is (equal '(:inner 1 :y) (meow:call x '(:waterfall :step 1)))
+          "the link on the emitter's own process is skipped, not deadlocked")
+      (is (< (- (now) start) 1))
+      (is (equal '((:y :link (1))) (drain)))
+      (stop-and-join x)
+      (stop-and-join y))))

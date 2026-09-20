@@ -16,11 +16,21 @@ waits for all of them, or nil to wait forever.")
 everything mounted under it, :up for the context, its ancestors and the
 services mounted directly in any of them, or :both.")
 
+(defvar +%skipped+ '#:skipped
+  "What %DELIVER returns for a listener released before its delivery arrived.
+It travels back through the reply cell, so it has to be a value rather than a
+second return value.")
+
+(defun %unskip (value)
+  (unless (eq value +%skipped+) value))
+
 (defun %deliver (delivery)
-  "Run DELIVERY's listener unless it was released after being sent."
+  "Run DELIVERY's listener, or return +%SKIPPED+ if it was released after
+being sent."
   (let ((listener (delivery-listener delivery)))
-    (when (listener-active listener)
-      (apply (listener-function listener) (delivery-args delivery)))))
+    (if (listener-active listener)
+        (apply (listener-function listener) (delivery-args delivery))
+        +%skipped+)))
 
 (defun on (service event function)
   "Call FUNCTION on SERVICE's process whenever EVENT is emitted in its
@@ -76,14 +86,26 @@ mounted in."
   (dolist (listener (%listeners target event))
     (cast (listener-process listener) (make-delivery listener args))))
 
-(defun %deliver-and-wait (listener args)
-  "LISTENER's result, or nil if it exited, skipped the delivery or timed out."
+(defun %deliver-and-wait* (listener args)
+  "(values result ran-p) for LISTENER. RAN-P is nil only when the listener
+body cannot have started: it was released before the delivery arrived, or the
+call would have closed a wait cycle and was never sent. One that times out,
+errors or exits has already started."
   (let ((delivery (make-delivery listener args))
         (process (listener-process listener)))
-    (if (eq process (self))
-        (%deliver delivery)
-        (multiple-value-bind (value status) (call process delivery :timeout *event-timeout*)
-          (unless status value)))))
+    (flet ((ran (value) (values (%unskip value) (not (eq value +%skipped+)))))
+      (if (eq process (self))
+          (ran (%deliver delivery))
+          (multiple-value-bind (value status)
+              (call process delivery :timeout *event-timeout*)
+            (cond ((null status) (ran value))
+                  ((and (consp status) (eq (first status) :deadlock))
+                   (values nil nil))
+                  (t (values nil t))))))))
+
+(defun %deliver-and-wait (listener args)
+  "LISTENER's result, or nil if it exited, skipped the delivery or timed out."
+  (values (%deliver-and-wait* listener args)))
 
 (defun emit-serial (target event &rest args)
   "Call each listener for EVENT on TARGET in registration order, waiting for
@@ -119,15 +141,35 @@ them, and return their values in registration order."
                      (%send-call call delivery)))
                  calls deliveries)
            (let ((own (mapcar (lambda (delivery call)
-                                (unless call (%deliver delivery)))
+                                (unless call (%unskip (%deliver delivery))))
                               deliveries calls)))
              (mapcar (lambda (call value)
                        (cond ((pending-call-p call)
                               (multiple-value-bind (value status)
                                   (%await-call call (and deadline
                                                          (max 0 (- deadline (%now)))))
-                                (unless status value)))
+                                (unless status (%unskip value))))
                              (call nil)
                              (t value)))
                      calls own)))
       (%end-calls calls))))
+
+(defun %waterfall (listeners inner args)
+  (if (null listeners)
+      (apply inner args)
+      (flet ((next (&rest next-args)
+               (%waterfall (rest listeners) inner (or next-args args))))
+        (multiple-value-bind (value ran)
+            (%deliver-and-wait* (first listeners) (append args (list #'next)))
+          (if ran
+              value
+              (%waterfall (rest listeners) inner args))))))
+
+(defun waterfall (target event inner &rest args)
+  "Run the listeners for EVENT on TARGET as a chain. Each is called with ARGS
+and a NEXT function; NEXT runs the rest of the chain, and the innermost one
+calls INNER with the args it has reached. NEXT without arguments keeps the
+current ones. A listener that returns without calling NEXT ends the chain, and
+its value is what WATERFALL returns. A listener that cannot have run is
+skipped, so INNER still runs."
+  (%waterfall (%listeners target event) inner args))
