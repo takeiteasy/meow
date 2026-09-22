@@ -11,7 +11,7 @@
   (<= (- seconds 0.01) elapsed))
 
 (defun join (process)
-  (bt2:join-thread (meow:process-thread process))
+  (bt:join-thread (meow:process-thread process))
   process)
 
 (test system-loads

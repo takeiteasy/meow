@@ -96,24 +96,27 @@ error, or :aborted on any other non-local exit."
   "Interrupt PROCESS's thread to exit with :killed. Does nothing once it is
 already exiting, so its exit hooks still run."
   (ignore-errors
-   (bt2:interrupt-thread (process-thread process)
-                         (lambda ()
-                           (when (eq *%running* process)
-                             (exit :killed))))))
+   (bt:interrupt-thread (process-thread process)
+                        (lambda ()
+                          (when (eq *%running* process)
+                            (exit :killed))))))
 
+;;; Threads are apiv1 (bt:), not apiv2 (bt2:): apiv2's thread wrapper table
+;;; leaks an entry per thread on ECL, wedging a lock elsewhere in the image
+;;; once enough of them pile up. Locks and condition variables stay on bt2.
 (defun spawn (function &key name)
   "Run FUNCTION in a new thread as a new process."
   (let ((process (make-instance 'process :name name)))
     (setf (process-thread process)
-          (bt2:make-thread (lambda ()
-                             (handler-case (%run process function)
-                               (error () nil)))
-                           :name (format nil "meow ~(~a~)" (or name "process"))))
+          (bt:make-thread (lambda ()
+                            (handler-case (%run process function)
+                              (error () nil)))
+                          :name (format nil "meow ~(~a~)" (or name "process"))))
     process))
 
 (defun %call-with-process (function name)
   (let ((process (make-instance 'process :name name
-                                         :thread (bt2:current-thread))))
+                                         :thread (bt:current-thread))))
     (%run process (lambda () (funcall function process)))))
 
 (defmacro with-process ((var &key name) &body body)

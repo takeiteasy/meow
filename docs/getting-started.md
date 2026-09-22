@@ -12,8 +12,9 @@ ln -s ~/git/meow ~/quicklisp/local-projects/meow
 (ql:quickload :meow)
 ```
 
-Dependencies: `bordeaux-threads` (bt2 API), `alexandria` and `closer-mop`
-from Quicklisp, plus two that need local projects of their own:
+Dependencies: `bordeaux-threads` (apiv1 for thread lifecycle, apiv2 for locks
+and condition variables), `alexandria` and `closer-mop` from Quicklisp, plus
+two that need local projects of their own:
 
 ```sh
 git clone https://github.com/takeiteasy/trivial-high-precision-timer \

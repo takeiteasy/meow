@@ -107,6 +107,17 @@
     (is (typep (first seen) 'error))
     (is (eq p (second seen)))))
 
+(test spawned-processes-do-not-fill-bt2s-thread-wrapper-table
+  ;; Reads bt2::.known-threads., an internal symbol: apiv2's make-thread
+  ;; wraps every native thread in a table entry that only clears on a GC
+  ;; that happens to collect it, which wedged a lock elsewhere in the image
+  ;; on ECL once enough piled up. Threads are apiv1 (bt:) precisely so
+  ;; spawned processes never touch that table at all.
+  (let ((before (hash-table-count bt2::.known-threads.)))
+    (dolist (p (loop repeat 200 collect (meow:spawn (lambda () nil))))
+      (join p))
+    (is (= before (hash-table-count bt2::.known-threads.)))))
+
 (test failing-teardown-error-hook-falls-back-to-printing
   (let* ((gate (bt2:make-semaphore))
          (seen nil)

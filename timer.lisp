@@ -46,7 +46,7 @@ here; it runs where it can be cancelled safely."
                                 :key #'timer-cell-deadline))
     (bt2:condition-notify *%timer-cv*)
     (unless *%timer-thread*
-      (setf *%timer-thread* (bt2:make-thread #'%timer-loop :name "meow timer")))))
+      (setf *%timer-thread* (bt:make-thread #'%timer-loop :name "meow timer")))))
 
 (defun %timer-remove (cell)
   (bt2:with-lock-held (*%timer-lock*)

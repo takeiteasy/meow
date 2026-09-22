@@ -425,6 +425,6 @@ ALREADY-REGISTERED if its name is taken."
                          :name (service-name service))))
     (bt2:wait-on-semaphore started)
     (when failure
-      (bt2:join-thread (process-thread process))
+      (bt:join-thread (process-thread process))
       (error failure))
     process))
