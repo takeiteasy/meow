@@ -49,6 +49,18 @@ Each agent sends its parent exactly one of these:
 concurrent agents apart. When the agent finishes on a `call`, the call
 returns `result`.
 
+A plain process reads these off `receive`, as the example above does. A
+[service](services.md) parent gets them delivered to its own `handle`, the
+same way it gets `:call` and `:cast`:
+
+```lisp
+(defmethod handle ((s orchestrator) message)
+  (case (first message)
+    (:agent-done (bind-result (second message) (fourth message)))
+    (:agent-down (retry (second message)))
+    ...))
+```
+
 ## Names
 
 Agents are unregistered by default. Pass `:name` to register one for its

@@ -379,6 +379,13 @@ it signalled."
          (%timer-fire (second message)))
         (t (handle service message))))
 
+(defun %agent-report-p (message)
+  "T when MESSAGE is one of the reports DELEGATE sends a parent: (:agent-done
+ref agent result) or (:agent-down ref reason). Neither shape is in
+%MESSAGE-PARTS's table, which is the call/cast wire format SERVE shares, so a
+service parent needs its own recognition of them."
+  (and (consp message) (member (first message) '(:agent-done :agent-down))))
+
 (defgeneric %dispatch (service message))
 
 (defmethod %dispatch ((service service) message)
@@ -390,7 +397,8 @@ it signalled."
       (:cast (%handle service a))
       (:stop (exit a))
       (:registered (%dep-up service a b))
-      (:unregistered (%dep-lost service a b)))))
+      (:unregistered (%dep-lost service a b))
+      (t (when (%agent-report-p message) (%handle service message))))))
 
 (defun %service-loop (service)
   (%guard service nil (lambda () (%maybe-ready service)))
