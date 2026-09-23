@@ -5,10 +5,23 @@
   (cv (bt2:make-condition-variable) :read-only t)
   (state :pending)
   (value nil)
-  (caller nil))
+  (caller nil)
+  ;; Set by DEFER-REPLY's :UNTIL, so REPLY can drop the exit hook once the
+  ;; cell is answered rather than leaking it for the process's lifetime.
+  (defer-hook nil)
+  (defer-process nil))
 
 (defvar *%caller* nil
   "The process whose call is being handled, if any.")
+
+(defvar *%current-cell* nil
+  "The reply cell of the :call message %DISPATCH is delivering, or nil
+during a :cast. DEFER-REPLY reads this.")
+
+(defvar *%deferred-p* nil
+  "True once DEFER-REPLY has been called while handling the current
+message. %DISPATCH checks this instead of replying with HANDLE's return
+value.")
 
 (defun %settle (cell state value)
   "Fill CELL once; later settlements are ignored."
@@ -20,8 +33,35 @@
   nil)
 
 (defun reply (cell value)
-  "Answer the CALL that sent CELL."
-  (%settle cell :value value))
+  "Answer the CALL that sent CELL, as DEFER-REPLY returned it. Drops the
+:UNTIL exit hook DEFER-REPLY may have added, if the cell hasn't already
+settled some other way."
+  (%settle cell :value value)
+  (a:when-let ((hook (reply-cell-defer-hook cell)))
+    (remove-exit-hook (reply-cell-defer-process cell) hook)))
+
+(defun defer-reply (&key until)
+  "Call inside HANDLE, while handling a :call, to answer it later with REPLY
+instead of HANDLE's return value. Returns the call's reply cell for REPLY to
+take; returns nil inside a :cast, which has no cell to defer.
+
+UNTIL, a process, settles the cell as (:down reason) if UNTIL exits before
+REPLY is called -- the same protection CALL gives its own callers, for a
+reply that has been handed off to another process. Without UNTIL, a handler
+that never replies leaves every waiting CALL to time out on its own."
+  (a:when-let ((cell *%current-cell*))
+    (setf *%deferred-p* t)
+    (when until
+      (let ((hook (add-exit-hook until (lambda (process reason)
+                                          (declare (ignore process))
+                                          (%settle cell :down reason)))))
+        (if hook
+            (setf (reply-cell-defer-process cell) until
+                  (reply-cell-defer-hook cell) hook)
+            ;; UNTIL had already exited: settle now, the same as %SEND-CALL
+            ;; does for a target that is already gone.
+            (%settle cell :down (process-exit-reason until)))))
+    cell))
 
 (defstruct (pending-call (:constructor %make-pending-call (process)))
   process (cell (%make-reply-cell)) hook)
@@ -214,12 +254,15 @@ else nil."
 
 (defun serve (handler &key name)
   "Spawn a process that calls HANDLER with each call or cast message. A call's
-reply is HANDLER's return value. Malformed messages are dropped."
+reply is HANDLER's return value, unless HANDLER calls DEFER-REPLY and answers
+it later with REPLY. Malformed messages are dropped."
   (spawn (lambda ()
            (loop (multiple-value-bind (tag a b) (%message-parts (receive))
                    (case tag
                      (:call (when (and (reply-cell-p a) (%cell-pending-p a))
-                              (reply a (funcall handler b))))
-                     (:cast (funcall handler a))
+                              (let ((*%current-cell* a) (*%deferred-p* nil))
+                                (let ((result (funcall handler b)))
+                                  (unless *%deferred-p* (reply a result))))))
+                     (:cast (let ((*%current-cell* nil)) (funcall handler a)))
                      (:stop (exit a))))))
          :name name))

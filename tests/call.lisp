@@ -180,3 +180,51 @@ that call's status, or its reply if it has none. An empty route is :done."
       (is (equal (list (list nil (list :deadlock (list p))) '(2 nil))
                  (meow:call-each (list p other) '(1 2))))
       (stop-and-join other))))
+
+;;; --- defer-reply ---------------------------------------------------------
+
+(defun defer-server ()
+  "A server that hands off :defer to a fresh worker process, which replies
+after a short sleep; :cast-probe records whether DEFER-REPLY returned a cell
+while handling a cast, read back with :read-probe."
+  (let ((probe :untouched))
+    (meow:serve (lambda (msg)
+                  (if (consp msg)
+                      (ecase (first msg)
+                        (:defer
+                         (let ((cell (meow:defer-reply)))
+                           (meow:spawn (lambda ()
+                                         (sleep 0.05)
+                                         (meow:reply cell (second msg))))
+                           nil))
+                        (:defer-until
+                         (meow:defer-reply :until (second msg)))
+                        (:cast-probe (setf probe (meow:defer-reply))))
+                      (ecase msg
+                        (:read-probe probe)))))))
+
+(test defer-reply-answers-later-from-another-process
+  (let ((s (defer-server)))
+    (is (equal '(:done nil) (multiple-value-list (meow:call s '(:defer :done)))))
+    (stop-and-join s)))
+
+(test defer-reply-returns-nil-inside-a-cast
+  (let ((s (defer-server)))
+    (meow:cast s '(:cast-probe))
+    (is (null (meow:call s :read-probe)))
+    (stop-and-join s)))
+
+(test deferred-call-settles-down-when-until-exits-first
+  (let* ((s (defer-server))
+         (until (meow:spawn (lambda () (sleep 0.05)))))
+    ;; UNTIL exits :normal shortly after S has deferred to it; the blocking
+    ;; CALL below is already waiting when that happens.
+    (is (equal '(nil (:down :normal))
+               (multiple-value-list (meow:call s (list :defer-until until)))))
+    (stop-and-join s)))
+
+(test deferred-call-nobody-answers-times-out
+  (let ((s (meow:serve (lambda (msg) (declare (ignore msg)) (meow:defer-reply)))))
+    (is (equal '(nil :timeout)
+               (multiple-value-list (meow:call s :never :timeout 0.1))))
+    (stop-and-join s)))

@@ -411,9 +411,15 @@ service parent needs its own recognition of them."
   (multiple-value-bind (tag a b) (%message-parts message)
     (case tag
       (:call (when (and (reply-cell-p a) (%cell-pending-p a))
-               (let ((*%caller* (reply-cell-caller a)))
-                 (reply a (%handle service b)))))
-      (:cast (%handle service a))
+               (let ((*%caller* (reply-cell-caller a))
+                     (*%current-cell* a)
+                     (*%deferred-p* nil))
+                 (let ((result (%handle service b)))
+                   ;; HANDLE may have called DEFER-REPLY to hand A off to
+                   ;; another process instead of answering with RESULT here.
+                   (unless *%deferred-p*
+                     (reply a result))))))
+      (:cast (let ((*%current-cell* nil)) (%handle service a)))
       (:stop (exit a))
       (:registered (%dep-up service a b))
       (:unregistered (%dep-lost service a b))

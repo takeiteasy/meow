@@ -83,6 +83,44 @@ straight away.
 `(call-each processes messages &key (timeout 5))` is the same with one
 message per process, taken from `messages` in the same order.
 
+## Deferred replies
+
+`(defer-reply &key until)`, called inside `handle` (or a `serve` handler)
+while a `:call` is being delivered, hands the call's reply cell back instead
+of answering with `handle`'s return value. Some other process answers it
+later with `(reply cell value)`:
+
+```lisp
+(defservice worker-pool ()
+  ((idle :initform '() :accessor idle-workers)))
+
+(defmethod handle ((s worker-pool) message)
+  (case (first message)
+    (:work (let ((cell (defer-reply)))
+             (cast (pop (idle-workers s)) (list :do (second message) cell))
+             nil))))
+```
+
+Called during a `:cast`, `defer-reply` returns nil -- there is no cell to
+defer. A handler that defers without answering, and without `:until`, leaves
+every waiting `call` to time out on its own.
+
+`until`, a process, settles the cell as `(:down reason)` if `until` exits
+before `reply` is called -- the same protection `call` gives its own callers,
+for a reply that has been handed off to another process:
+
+```lisp
+(defmethod handle ((s worker-pool) message)
+  (case (first message)
+    (:work (let* ((worker (pop (idle-workers s)))
+                  (cell (defer-reply :until worker)))
+             (cast worker (list :do (second message) cell))
+             nil))))
+```
+
+Without `:until`, a handoff to a process that then crashes leaves the cell
+pending, and the caller's own `call` times out instead of seeing `:down`.
+
 ## Deadlocks
 
 Each process waiting in `call` or a waiting [emit](events.md) is recorded

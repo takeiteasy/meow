@@ -33,7 +33,7 @@ Specialise any of these generic functions. Each has a no-op default.
 | `(metadata s)` | At registration. Returns a plist that is published as the registration props. |
 | `(ready s)` | When every dependency is registered. It fires again after a lost dependency comes back. |
 | `(dep-down s name reason)` | When dependency `name` leaves a ready service. |
-| `(handle s message)` | For each `call` or `cast`. The return value is the reply to a `call`. |
+| `(handle s message)` | For each `call` or `cast`. The return value is the reply to a `call`, unless `handle` calls `defer-reply` (see [processes](processes.md#deferred-replies)) and answers it later with `reply`. |
 | `(dispose s reason)` | When the service stops for any reason, before it is unregistered. |
 | `(update-config s old new)` | When its context [updates](update.md) its initargs. Return true to apply them in place. |
 
