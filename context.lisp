@@ -185,6 +185,13 @@ remaining children are updated, with the intercept kept."
         value
         (error value))))
 
+(defun %join-exited (process)
+  "BT:JOIN-THREAD PROCESS's thread, once its exit hooks have already run --
+the thread has nothing left to do but unwind, so this returns almost at
+once. Ensures %STOP-AND-WAIT never reports a process gone while a fork
+right after it would still see its thread (~takeiteasy/nyaa#72)."
+  (ignore-errors (bt:join-thread (process-thread process))))
+
 (defun %stop-and-wait (process timeout &optional (reason :shutdown))
   "Stop PROCESS and wait up to TIMEOUT seconds for its exit hooks to run,
 then kill it and wait as long again. A TIMEOUT of :infinity waits without
@@ -200,14 +207,27 @@ PROCESS to the waiting process meanwhile return (:deadlock ...)."
          process
          (lambda ()
            (stop process reason)
-           (cond ((eq timeout :infinity) (bt2:wait-on-semaphore done) t)
-                 ((bt2:wait-on-semaphore done :timeout timeout) t)
+           (cond ((eq timeout :infinity) (bt2:wait-on-semaphore done) (%join-exited process) t)
+                 ((bt2:wait-on-semaphore done :timeout timeout) (%join-exited process) t)
                  ;; The interrupt can leave shared state inconsistent, and
                  ;; can't reach a process already in its exit hooks.
                  (t (%kill process)
                     (when (bt2:wait-on-semaphore done :timeout timeout)
+                      (%join-exited process)
                       (if (eq (process-exit-reason process) :killed) :killed t))))))
         t)))
+
+(defun stop-and-wait (process &key (reason :shutdown) (timeout 5))
+  "STOP PROCESS and don't return until its thread has actually exited (or
+TIMEOUT seconds, default 5, pass and it is killed instead) -- unlike STOP,
+which only sends the request. TIMEOUT :infinity waits without killing.
+Returns t, :killed, or :timeout if it is still running. For a context, this
+implies every child's thread is gone too, the same guarantee M:SUSPEND
+already gives a caller about to fork (~takeiteasy/nyaa#72): STOP alone
+leaves teardown running in the background, so a fork right after it can
+still see the exiting thread."
+  (let ((result (%stop-and-wait process timeout reason)))
+    (if (null result) :timeout result)))
 
 (defun %run-child (context child)
   "Start CHILD's instance. Its exit comes back to CONTEXT as a message."

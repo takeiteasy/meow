@@ -32,7 +32,7 @@
    #:*debug-services* #:skip-message #:stop-service
    ;; contexts
    #:context #:context-intensity #:context-period #:context-registry
-   #:mount #:unmount #:children #:reload #:update #:intercept
+   #:mount #:unmount #:children #:reload #:update #:intercept #:stop-and-wait
    #:stop-timeout #:stop-timeout-process #:stop-timeout-seconds
    #:suspend #:resume #:suspend-timeout #:suspend-timeout-pending
    ;; config file loader

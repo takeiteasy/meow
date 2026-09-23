@@ -189,6 +189,14 @@ such as `children` signal an error instead of returning a status.
 A child can't unmount or reload itself: both would deadlock, so `unmount`
 and `reload` signal an error instead.
 
+`(stop-and-wait process &key reason timeout)` stops any process (a
+context or a plain one) and doesn't return until its thread has actually
+exited, unlike `stop`, which only sends the request and leaves teardown
+running in the background. Returns `t`, `:killed`, or `:timeout` (default
+`timeout` 5 seconds, or `:infinity` to wait without killing) -- the same
+outcomes `unmount` reports, for a caller with no context of its own to
+unmount from.
+
 ## Nesting
 
 A context can be mounted like any other service:

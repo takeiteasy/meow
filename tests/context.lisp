@@ -303,6 +303,26 @@
       (is (eq :shutdown (meow:process-exit-reason p)))
       (stop-and-join ctx))))
 
+;;; STOP-AND-WAIT (~takeiteasy/nyaa#72): STOP alone leaves teardown running
+;;; in the background, so a caller about to fork right after it (SAVE-IMAGE)
+;;; can still see the exiting thread. STOP-AND-WAIT doesn't return until the
+;;; thread itself is gone.
+
+(test stop-and-wait-blocks-until-the-thread-has-actually-exited
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (thread (meow:process-thread ctx)))
+      (meow:mount ctx 'provider)
+      (is (eq t (meow:stop-and-wait ctx)))
+      (is (not (member thread (sb-thread:list-all-threads)))))))
+
+(test stop-and-wait-reports-a-timeout-on-a-stuck-dispose
+  (with-fresh-registry ()
+    (let ((p (meow:mount (start-context) 'stubborn)))
+      (is (eq :timeout (meow:stop-and-wait p :timeout 0.05)))
+      (join p)
+      (is (eq :shutdown (meow:process-exit-reason p))))))
+
 (meow:defservice context-caller (reporting) ())
 
 (defmethod meow:dispose :before ((s context-caller) reason)
