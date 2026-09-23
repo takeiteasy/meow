@@ -80,6 +80,9 @@ delay the others. It returns a list, in the order of `processes`, of
 wait cycle, the caller itself included, is `(nil (:deadlock processes))`
 straight away.
 
+`(call-each processes messages &key (timeout 5))` is the same with one
+message per process, taken from `messages` in the same order.
+
 ## Deadlocks
 
 Each process waiting in `call` or a waiting [emit](events.md) is recorded

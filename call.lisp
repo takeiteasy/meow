@@ -163,20 +163,22 @@ is broken the same way."
                (values nil (list :deadlock pending))))
       (%end-calls calls))))
 
-(defun call-all (processes message &key (timeout 5))
-  "CALL MESSAGE on every one of PROCESSES at once, all waiting on one shared
-TIMEOUT. Returns a list, in PROCESSES' order, of (reply status) -- CALL's
-two values for that process, status nil when it answered. A process that
-would close a wait cycle, the caller itself included, is (nil (:deadlock
-processes)) without anything sent."
+(defun call-each (processes messages &key (timeout 5))
+  "CALL each of MESSAGES on the process at the same position in PROCESSES, all
+at once and all waiting on one shared TIMEOUT. Returns a list, in PROCESSES'
+order, of (reply status) -- CALL's two values for that process, status nil
+when it answered. A process that would close a wait cycle, the caller itself
+included, is (nil (:deadlock processes)) without anything sent."
+  (assert (= (length processes) (length messages)))
   (let ((deadline (and timeout (+ (%now) timeout)))
         (calls '()))
     (unwind-protect
          (progn
            (setf calls (%begin-calls processes))
-           (dolist (call calls)
-             (when (pending-call-p call)
-               (%send-call call message)))
+           (loop for call in calls
+                 for message in messages
+                 when (pending-call-p call)
+                   do (%send-call call message))
            (mapcar (lambda (call)
                      (if (pending-call-p call)
                          (multiple-value-list
@@ -184,6 +186,11 @@ processes)) without anything sent."
                          (list nil (list :deadlock call))))
                    calls))
       (%end-calls calls))))
+
+(defun call-all (processes message &key (timeout 5))
+  "CALL MESSAGE on every one of PROCESSES at once; see CALL-EACH."
+  (call-each processes (make-list (length processes) :initial-element message)
+             :timeout timeout))
 
 (defun cast (process message)
   "Send MESSAGE to PROCESS as (:cast message) without waiting."

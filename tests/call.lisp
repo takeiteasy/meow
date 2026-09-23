@@ -157,3 +157,26 @@ that call's status, or its reply if it has none. An empty route is :done."
     (is (null (meow:self)))
     (is (equal '((1 nil)) (meow:call-all (list s) 1)))
     (stop-and-join s)))
+
+(test call-each-sends-each-process-its-own-message
+  (let ((a (meow:serve (lambda (m) (list :a m))))
+        (b (meow:serve (lambda (m) (list :b m)))))
+    (is (equal '(((:a 1) nil) ((:b 2) nil)) (meow:call-each (list a b) '(1 2))))
+    (is (null (meow:call-each '() '())))
+    (mapc #'stop-and-join (list a b))))
+
+(test call-each-times-out-only-the-slow-target
+  (let ((fast (meow:serve (lambda (m) m)))
+        (slow (meow:serve (lambda (m) (sleep 2) m)))
+        (start (now)))
+    (is (equal '((1 nil) (nil :timeout) (3 nil))
+               (meow:call-each (list fast slow fast) '(1 2 3) :timeout 0.3)))
+    (is (< (- (now) start) 1.5))
+    (mapc #'stop-and-join (list fast slow))))
+
+(test call-each-refuses-the-caller-and-answers-the-rest
+  (meow:with-process (p)
+    (let ((other (meow:serve (lambda (m) m))))
+      (is (equal (list (list nil (list :deadlock (list p))) '(2 nil))
+                 (meow:call-each (list p other) '(1 2))))
+      (stop-and-join other))))
