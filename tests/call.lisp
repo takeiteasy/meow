@@ -128,3 +128,32 @@ that call's status, or its reply if it has none. An empty route is :done."
     (is (equal (make-list 200 :initial-element :hi) results))
     (stop-and-join a)
     (stop-and-join b)))
+
+(test call-all-replies-in-order
+  (let ((a (meow:serve (lambda (m) (list :a m))))
+        (b (meow:serve (lambda (m) (list :b m)))))
+    (is (equal '(((:a 1) nil) ((:b 1) nil)) (meow:call-all (list a b) 1)))
+    (is (null (meow:call-all '() 1)))
+    (mapc #'stop-and-join (list a b))))
+
+(test call-all-times-out-only-the-slow-target
+  (let ((fast (meow:serve (lambda (m) m)))
+        (slow (meow:serve (lambda (m) (sleep 2) m)))
+        (start (now)))
+    (is (equal '((1 nil) (nil :timeout) (1 nil))
+               (meow:call-all (list fast slow fast) 1 :timeout 0.3)))
+    (is (< (- (now) start) 1.5))
+    (mapc #'stop-and-join (list fast slow))))
+
+(test call-all-refuses-the-caller-and-answers-the-rest
+  (meow:with-process (p)
+    (let ((other (meow:serve (lambda (m) m))))
+      (is (equal (list (list nil (list :deadlock (list p))) '(1 nil))
+                 (meow:call-all (list p other) 1)))
+      (stop-and-join other))))
+
+(test call-all-works-without-a-current-process
+  (let ((s (meow:serve (lambda (m) m))))
+    (is (null (meow:self)))
+    (is (equal '((1 nil)) (meow:call-all (list s) 1)))
+    (stop-and-join s)))

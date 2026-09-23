@@ -163,6 +163,28 @@ is broken the same way."
                (values nil (list :deadlock pending))))
       (%end-calls calls))))
 
+(defun call-all (processes message &key (timeout 5))
+  "CALL MESSAGE on every one of PROCESSES at once, all waiting on one shared
+TIMEOUT. Returns a list, in PROCESSES' order, of (reply status) -- CALL's
+two values for that process, status nil when it answered. A process that
+would close a wait cycle, the caller itself included, is (nil (:deadlock
+processes)) without anything sent."
+  (let ((deadline (and timeout (+ (%now) timeout)))
+        (calls '()))
+    (unwind-protect
+         (progn
+           (setf calls (%begin-calls processes))
+           (dolist (call calls)
+             (when (pending-call-p call)
+               (%send-call call message)))
+           (mapcar (lambda (call)
+                     (if (pending-call-p call)
+                         (multiple-value-list
+                          (%await-call call (and deadline (max 0 (- deadline (%now))))))
+                         (list nil (list :deadlock call))))
+                   calls))
+      (%end-calls calls))))
+
 (defun cast (process message)
   "Send MESSAGE to PROCESS as (:cast message) without waiting."
   (send process (list :cast message))

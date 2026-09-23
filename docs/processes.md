@@ -73,6 +73,13 @@ records.
 | `(values nil (:error condition))` | A [service](services.md#failure-model) skipped the message after an error. |
 | `(values nil (:deadlock processes))` | `p` is waiting on the caller, directly or through others. Nothing was sent, or a call already waiting was broken. |
 
+`(call-all processes msg &key (timeout 5))` calls every process at once and
+waits for all of them against the one timeout, so a slow process does not
+delay the others. It returns a list, in the order of `processes`, of
+`(reply status)`: `call`'s two values for each. A process that would close a
+wait cycle, the caller itself included, is `(nil (:deadlock processes))`
+straight away.
+
 ## Deadlocks
 
 Each process waiting in `call` or a waiting [emit](events.md) is recorded
