@@ -45,6 +45,8 @@ and `(effects s)` lists what it holds. See [effects](effects.md).
 `(service-context s)` returns the [context](contexts.md) it is mounted in,
 or nil.
 `(service-ready-p s)` returns true when every dependency is present.
+`(service-of process)` is the other direction: the service instance
+running as `process`, fetched over a call from outside it.
 
 ## Lifecycle
 

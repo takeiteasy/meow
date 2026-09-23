@@ -171,6 +171,13 @@ problem strings."
 (defun service-ready-p (service)
   (eq (slot-value service 'status) :ready))
 
+(defun service-of (process)
+  "The SERVICE instance running as PROCESS, fetched over an ordinary call
+so nothing is read off another thread's slots directly. Signals if
+PROCESS doesn't answer within CALL's default timeout."
+  (multiple-value-bind (reply status) (call process (list '%service-self))
+    (if status (error "service-of ~a failed: ~s" process status) reply)))
+
 (defun %set-status (service new)
   "Move SERVICE to NEW, announcing the change on its registry's event bus."
   (with-slots (status registry name process) service

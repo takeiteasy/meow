@@ -141,6 +141,12 @@
       (is (eq :x (meow:call p '(:echo :x))))
       (stop-and-join p))))
 
+(test service-of-fetches-the-instance-from-its-process
+  (with-fresh-registry ()
+    (multiple-value-bind (p service) (start 'provider)
+      (is (eq service (meow:service-of p)))
+      (stop-and-join p))))
+
 (test stray-messages-are-ignored
   (with-fresh-registry ()
     (let ((p (start 'provider)))
