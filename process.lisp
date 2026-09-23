@@ -104,6 +104,37 @@ tree to call on itself; never call directly."
   (%require-self)
   (throw '%exit '%suspended))
 
+;;; A %SUSPEND-CELL closes the race an ack semaphore alone can't: SUSPEND
+;;; timing out and a process finally getting to its queued %SUSPEND message
+;;; can land at the same moment. Without a way to withdraw the request, a
+;;; process that parks just after SUSPEND gives up on it is never
+;;; respawned -- alive-p stays true forever, so nothing ever notices. The
+;;; cell makes "may this process still park for this request" and "record
+;;; that it did" one atomic decision, so SUSPEND's timeout path always
+;;; knows, for certain, whether that process parked or was turned away.
+
+(defstruct (suspend-cell (:constructor %make-suspend-cell ()))
+  (lock (bt2:make-lock :name "suspend cell"))
+  (state :pending))
+
+(defun %suspend-cell-try-park (cell)
+  "T and CELL moved to :parked, if it was still :pending; nil (CELL
+untouched, already :cancelled) otherwise. Called from the process about to
+park."
+  (bt2:with-lock-held ((suspend-cell-lock cell))
+    (when (eq (suspend-cell-state cell) :pending)
+      (setf (suspend-cell-state cell) :parked)
+      t)))
+
+(defun %suspend-cell-cancel (cell)
+  "CELL's final state: :cancelled if it was still :pending (so the process
+will see :cancelled and drop the request, never parking for it), or
+:parked if it beat this call to it. Called from SUSPEND on a timeout."
+  (bt2:with-lock-held ((suspend-cell-lock cell))
+    (when (eq (suspend-cell-state cell) :pending)
+      (setf (suspend-cell-state cell) :cancelled))
+    (suspend-cell-state cell)))
+
 (defun %kill (process)
   "Interrupt PROCESS's thread to exit with :killed. Does nothing once it is
 already exiting, so its exit hooks still run."

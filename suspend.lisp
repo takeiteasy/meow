@@ -20,6 +20,11 @@
 ;;; a save-lisp-and-die reload, checked by hand against the running
 ;;; implementation, so a deadline computed before a suspend still means the
 ;;; same wall-clock time after RESUME, with no rebasing required.
+;;;
+;;; SUSPEND returns only once every parked thread has actually exited
+;;; (BT:JOIN-THREAD, below): an ack fires just before its thread's own
+;;; unwind reaches the OS, so a caller about to fork right after SUSPEND
+;;; returns needs that guarantee, not just PROCESS-ALIVE-P staying true.
 
 (define-condition suspend-timeout (error)
   ((pending :initarg :pending :reader suspend-timeout-pending))
@@ -54,10 +59,15 @@ CALL's unbounded default."
   "PROCESS and its descendants, deepest first, as (process service) pairs.
 Found entirely through %BOUNDED-CALL: %CHILDREN-SERVICES answers nil for a
 leaf service (the base %TREE-CHILDREN method's fallback), so recursing into
-one just stops there."
+one just stops there. A child that isn't PROCESS-ALIVE-P -- one waiting out
+a restart backoff -- is skipped: there is no thread to park, and the
+context's own pending restart timer brings it back after RESUME the same
+as it would have anyway."
   (let ((service (%bounded-call process (list '%service-self) deadline)))
     (append (loop for entry in (%bounded-call process (list '%children-services) deadline)
-                  append (%tree-entries (getf entry :process) deadline))
+                  for child = (getf entry :process)
+                  when (process-alive-p child)
+                    append (%tree-entries child deadline))
             (list (list process service)))))
 
 ;;; TODO: acks are awaited one at a time against a shared deadline, so a
@@ -68,15 +78,31 @@ one just stops there."
 ;;; or a single counting semaphore plus a per-process liveness probe) if
 ;;; that imprecision ever matters. Tracked in ~takeiteasy/meow#65.
 
-(defun %await-acks (pairs deadline)
-  "PAIRS, each (entry . ack), split into (values parked pending) by whether
-ack was signalled by DEADLINE, an %NOW reading."
+(defun %await-acks (asks deadline)
+  "ASKS, each (entry cell ack thread), split into (values parked pending)
+by whether ACK was signalled by DEADLINE, an %NOW reading. A timed-out ASK
+still might park a moment later -- %SUSPEND-CELL-CANCEL (process.lisp)
+makes that race safe: it either withdraws the request before the process
+gets to it (final state :cancelled, so PENDING) or finds the process
+already claimed it (final state :parked, so PARKED after all, exactly as
+if the ack itself had merely been slow to observe)."
   (let ((parked '()) (pending '()))
-    (dolist (pair pairs)
-      (if (bt2:wait-on-semaphore (cdr pair) :timeout (max 0 (- deadline (%now))))
-          (push (car pair) parked)
-          (push (car pair) pending)))
+    (dolist (ask asks)
+      (destructuring-bind (entry cell ack thread) ask
+        (declare (ignore thread))
+        (if (bt2:wait-on-semaphore ack :timeout (max 0 (- deadline (%now))))
+            (push entry parked)
+            (ecase (%suspend-cell-cancel cell)
+              (:cancelled (push entry pending))
+              (:parked (push entry parked))))))
     (values (nreverse parked) (nreverse pending))))
+
+(defun %join-parked (asks parked)
+  "BT:JOIN-THREAD every ASKS entry that ended up in PARKED, so SUSPEND
+never returns success while a thread it parked is still mid-unwind."
+  (dolist (ask asks)
+    (when (member (first ask) parked :test #'eq)
+      (ignore-errors (bt:join-thread (fourth ask))))))
 
 (defun %resume-entries (entries)
   "Respawn a fresh thread over each (process service) in ENTRIES, running
@@ -89,24 +115,27 @@ live from before the suspend."
 
 (defun suspend (context &key (timeout 5))
   "Park every process under CONTEXT's process, and CONTEXT itself,
-cooperatively. Stops the shared timer thread once every process has
-parked. Returns a SUSPENSION for RESUME.
+cooperatively. Returns only once every parked thread has actually exited
+(BT:JOIN-THREAD), and stops the shared timer thread. Returns a SUSPENSION
+for RESUME.
 
 Signals SUSPEND-TIMEOUT, having already resumed whatever did park, if any
-process does not park within TIMEOUT seconds (default 5) of being asked. A
-process that acks after SUSPEND-TIMEOUT is signalled parks anyway -- its ack
-can't be un-sent -- and is left running rather than tracked, since nothing
-here can un-suspend just that one later. Call RESUME on a *fresh* SUSPEND
-once the underlying cause (a wedged handler) is resolved."
+process does not park within TIMEOUT seconds (default 5). A process whose
+ack lost the timeout race is withdrawn before it can park
+(%SUSPEND-CELL-CANCEL) -- nothing here is ever left parked but untracked.
+Call RESUME on a *fresh* SUSPEND once the underlying cause (a wedged
+handler) is resolved."
   (let ((deadline (+ (%now) timeout)))
     (handler-case
         (let* ((entries (%tree-entries context deadline))
-               (pairs (mapcar (lambda (entry)
-                                (cons entry (bt2:make-semaphore :name "suspend ack")))
-                              entries)))
-          (dolist (pair pairs)
-            (send (first (car pair)) (list '%suspend (cdr pair))))
-          (multiple-value-bind (parked pending) (%await-acks pairs deadline)
+               (asks (mapcar (lambda (entry)
+                              (list entry (%make-suspend-cell) (bt2:make-semaphore :name "suspend ack")
+                                    (process-thread (first entry))))
+                             entries)))
+          (dolist (ask asks)
+            (send (first (first ask)) (list '%suspend (second ask) (third ask))))
+          (multiple-value-bind (parked pending) (%await-acks asks deadline)
+            (%join-parked asks parked)
             (if pending
                 (progn (%resume-entries parked)
                        (error 'suspend-timeout :pending pending))

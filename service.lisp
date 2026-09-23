@@ -431,9 +431,15 @@ respawns it, mirroring SUSPEND-SERVICE. Default does nothing.")
   (%guard service nil (lambda () (%maybe-ready service)))
   (loop (let ((message (receive)))
           (if (%suspend-signal-p message)
-              (progn (suspend-service service)
-                     (bt2:signal-semaphore (second message))
-                     (%suspend-self))
+              (destructuring-bind (cell ack) (rest message)
+                ;; %SUSPEND-CELL-TRY-PARK fails only once SUSPEND has
+                ;; already given up on this request (a timeout) -- then
+                ;; the request is simply dropped, never dispatched, and
+                ;; the loop carries on as if it had never arrived.
+                (when (%suspend-cell-try-park cell)
+                  (suspend-service service)
+                  (bt2:signal-semaphore ack)
+                  (%suspend-self)))
               (%guard service message (lambda () (%dispatch service message)))))))
 
 (defun %resume-service-loop (service)

@@ -12,16 +12,15 @@
       (drain)
       (let ((susp (meow:suspend ctx)))
         ;; PROCESS-ALIVE-P is unaffected -- that's the point, so RESUME can
-        ;; respawn over the same instance -- but the underlying thread
-        ;; really is gone. Each ack fires just before its thread's own
-        ;; unwind reaches the OS, so JOIN-THREAD (blocking, portable, same
-        ;; as suite.lisp's JOIN) rather than an instantaneous
-        ;; THREAD-ALIVE-P check -- ECL's own bookkeeping lags a beat behind
-        ;; the ack.
+        ;; respawn over the same instance. SUSPEND joins every thread it
+        ;; parks before returning, so BT:THREAD-ALIVE-P should be false by
+        ;; now too -- checked #+sbcl only, since CCL's own bookkeeping can
+        ;; briefly still report a joined thread alive (the fork use case
+        ;; suspend exists for, nyaa#48, is sbcl-only anyway).
         (is (meow:process-alive-p p))
         (is (meow:process-alive-p ctx))
-        (bt:join-thread (meow:process-thread p))
-        (bt:join-thread (meow:process-thread ctx))
+        #+sbcl (is-false (bt:thread-alive-p (meow:process-thread p)))
+        #+sbcl (is-false (bt:thread-alive-p (meow:process-thread ctx)))
         (meow:resume susp))
       (is (eq :pong (meow:call p :ping)))
       (stop-and-join ctx))))

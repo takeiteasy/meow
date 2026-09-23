@@ -25,7 +25,10 @@ only acts on between messages of its own, never `bt:interrupt-thread`, so
 nothing is cut off mid-handler or mid-call. A process that is busy stays
 busy; suspend just waits, the same trade-off a [context stopping a
 child](contexts.md#stopping) already makes. The shared timer thread stops
-once every process has parked. Returns an opaque suspension for `resume`.
+once every process has parked. `suspend` doesn't return until every parked
+thread has actually exited -- an ack fires just before its own thread's
+unwind reaches the OS, so `suspend` joins each one rather than trusting
+the ack alone. Returns an opaque suspension for `resume`.
 
 `process-alive-p` stays true throughout -- parking is not an exit, so no
 exit hook runs and nothing is unregistered.
@@ -42,11 +45,13 @@ queued for a process that's momentarily busy.
 
 ## `suspend-timeout`
 
-If a process doesn't park within `timeout` seconds, `suspend` resumes
-whatever did park and signals `suspend-timeout`. `(suspend-timeout-pending
-condition)` lists the processes that didn't, as `(process service)` pairs
-(`service` is nil if the timeout happened while still walking the tree, so
-that process's instance was never fetched).
+If a process doesn't park within `timeout` seconds, `suspend` withdraws its
+request -- a process that is still busy when the timeout lapses can never
+park for it after the fact, so nothing is ever left parked but
+untracked -- resumes whatever did park, and signals `suspend-timeout`.
+`(suspend-timeout-pending condition)` lists the processes that didn't, as
+`(process service)` pairs (`service` is nil if the timeout happened while
+still walking the tree, so that process's instance was never fetched).
 
 ```lisp
 (handler-case (suspend *app* :timeout 1)
