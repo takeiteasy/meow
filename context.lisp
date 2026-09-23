@@ -662,6 +662,11 @@ effect of CONTEXT, so a stopped context drops it."
                            (float (max 0 (- (first pending) (%now))) 1.0))
           :class (child-class child))))
 
+(defmethod %tree-children ((context context))
+  (mapcar (lambda (child)
+            (list :process (child-process child) :service (child-service child)))
+          (slot-value context 'children)))
+
 (defmethod handle ((context context) message)
   (multiple-value-bind (tag a b c)
       (when (a:proper-list-p message)

@@ -74,7 +74,10 @@ unwind a bt2 thread. Falls back to printing if the hook itself fails."
 (defun %run (process function)
   "Run FUNCTION as PROCESS and return its values. The exit reason is :normal
 on return, the value passed to EXIT, (:error condition) on an unhandled
-error, or :aborted on any other non-local exit."
+error, or :aborted on any other non-local exit. %SUSPEND-SELF (below)
+unwinds the same way but through a reason %RUN recognises specially:
+PROCESS stays alive and no exit hook runs, so %RESPAWN can run FUNCTION
+again over the same instance as if nothing happened."
   (let ((*self* process)
         (reason :aborted)
         (results '()))
@@ -84,13 +87,22 @@ error, or :aborted on any other non-local exit."
                           (let ((*%running* process))
                             (setf results (multiple-value-list (funcall function))))
                           :normal)))
-      (%exit process reason))
+      (unless (eq reason '%suspended) (%exit process reason)))
     (values-list results)))
 
 (defun exit (&optional (reason :normal))
   "End the current process with REASON."
   (%require-self)
   (throw '%exit reason))
+
+(defun %suspend-self ()
+  "End the current thread without exiting the process: no exit hook runs,
+PROCESS-ALIVE-P stays true, and the mailbox and every registration survive
+for %RESPAWN to pick back up. The primitive M:SUSPEND (suspend.lisp, a
+different, exported name -- this one is internal) sends every process in a
+tree to call on itself; never call directly."
+  (%require-self)
+  (throw '%exit '%suspended))
 
 (defun %kill (process)
   "Interrupt PROCESS's thread to exit with :killed. Does nothing once it is
@@ -113,6 +125,17 @@ already exiting, so its exit hooks still run."
                               (error () nil)))
                           :name (format nil "meow ~(~a~)" (or name "process"))))
     process))
+
+(defun %respawn (process function)
+  "Spawn a fresh thread over PROCESS, already alive from a SUSPEND, running
+FUNCTION -- the resume half of SUSPEND/SPAWN, same thread creation, no new
+instance."
+  (setf (process-thread process)
+        (bt:make-thread (lambda ()
+                          (handler-case (%run process function)
+                            (error () nil)))
+                        :name (format nil "meow ~(~a~)"
+                                      (or (process-name process) "process")))))
 
 (defun %call-with-process (function name)
   (let ((process (make-instance 'process :name name

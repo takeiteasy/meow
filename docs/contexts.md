@@ -156,6 +156,11 @@ unwinds its effects, runs `dispose` and unregisters it. `unmount` returns
 `:killed` in that case. The interrupt can land anywhere, so state the
 child shared with other threads may be left inconsistent.
 
+[`suspend`](suspend.md) parks a whole tree the same cooperative way a
+child's own stop does -- waiting behind a busy handler rather than
+interrupting it -- but never kills: a child still busy past its budget
+just leaves `suspend` reporting a timeout, tree untouched.
+
 A child mounted with `:shutdown :infinity` is never killed: its context
 waits for it as long as it takes. An explicit `unmount` or `reload`
 `:timeout` still kills it once that passes. While the context waits, it

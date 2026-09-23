@@ -377,7 +377,19 @@ it signalled."
          (%effect-labels service))
         ((and (a:proper-list-p message) (eq (first message) '%timer-fire))
          (%timer-fire (second message)))
+        ((and (a:proper-list-p message) (eq (first message) '%service-self))
+         service)
+        ((and (a:proper-list-p message) (eq (first message) '%children-services))
+         (%tree-children service))
         (t (handle service message))))
+
+(defgeneric %tree-children (service)
+  (:documentation "SUSPEND.LISP's own view of SERVICE's children, as
+(:process :service) plists -- nil for an ordinary service. Handled inside
+%HANDLE (above), ahead of the user-overridable HANDLE, so it answers
+uniformly regardless of what a service's own HANDLE method does with an
+unrecognised message -- an ECASE with no otherwise clause, say.")
+  (:method ((service service)) nil))
 
 (defun %agent-report-p (message)
   "T when MESSAGE is one of the reports DELEGATE sends a parent: (:agent-done
@@ -400,10 +412,36 @@ service parent needs its own recognition of them."
       (:unregistered (%dep-lost service a b))
       (t (when (%agent-report-p message) (%handle service message))))))
 
+(defgeneric suspend-service (service)
+  (:documentation "Called on SERVICE's own process just before it parks for
+M:SUSPEND. Default does nothing; a service whose EFFECTs hold a resource a
+forked child inheriting it would break -- typically a thread of its own,
+such as the hmr watcher's -- releases it here instead.")
+  (:method ((service service)) nil))
+
+(defgeneric resume-service (service)
+  (:documentation "Called on SERVICE's own process just after M:RESUME
+respawns it, mirroring SUSPEND-SERVICE. Default does nothing.")
+  (:method ((service service)) nil))
+
+(defun %suspend-signal-p (message)
+  (and (consp message) (eq (first message) '%suspend)))
+
 (defun %service-loop (service)
   (%guard service nil (lambda () (%maybe-ready service)))
   (loop (let ((message (receive)))
-          (%guard service message (lambda () (%dispatch service message))))))
+          (if (%suspend-signal-p message)
+              (progn (suspend-service service)
+                     (bt2:signal-semaphore (second message))
+                     (%suspend-self))
+              (%guard service message (lambda () (%dispatch service message)))))))
+
+(defun %resume-service-loop (service)
+  "The respawn continuation SUSPEND.LISP passes to %RESPAWN: RESUME-SERVICE,
+then straight back into the ordinary loop, no %INIT-SERVICE -- registration,
+dependencies and effects are all still live from before the suspend."
+  (resume-service service)
+  (%service-loop service))
 
 (defun start-service (service &key (registry *registry*)
                                    (debug *debug-services*))

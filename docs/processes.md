@@ -21,7 +21,8 @@ Exit reasons:
 
 A process stops by returning, calling `exit`, or failing. The only
 exception is a [context](contexts.md#stopping) killing a child that misses
-its shutdown.
+its shutdown -- or [`suspend`](suspend.md) ending a process's thread
+without stopping it at all, for `resume` to pick back up.
 
 ## Exit hooks
 

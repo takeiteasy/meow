@@ -29,6 +29,7 @@ Runs on SBCL, ECL and CCL.
 - [Config](docs/config.md)
 - [Config files](docs/loader.md)
 - [Hot reload](docs/reload.md)
+- [Suspend and resume](docs/suspend.md)
 - [Watching sources](docs/hmr.md)
 - [Updating config](docs/update.md)
 - [Isolation](docs/isolation.md)

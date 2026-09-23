@@ -54,6 +54,10 @@ application-specific code.
 - Processes stop cooperatively. A context interrupts a child's thread only
   to [kill](contexts.md#stopping) one that misses its shutdown, unless the
   child opts out with `:shutdown :infinity`.
+- [`suspend`](suspend.md) parks a whole tree's threads without stopping
+  any of it, for `resume` to pick back up over the same instances -- so a
+  caller can get every thread meow owns out of the way, for a fork or a
+  saved image, without losing state a restart would.
 
 ## Implementations
 

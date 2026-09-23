@@ -56,3 +56,10 @@ service up by name to get the new one.
 The [`watcher`](hmr.md) service does this for a whole subtree: it watches
 the source files, recompiles the ones that change and reloads the children
 holding the classes they define.
+
+## Contrast with suspend
+
+[`suspend`](suspend.md) also gets a process's thread out of the way, but
+keeps everything reload replaces: the same instance, the same process, no
+`dispose`, no unregistration. Use reload to pick up new code; use suspend
+to get every thread out of an image about to be saved or forked.

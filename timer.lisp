@@ -12,18 +12,25 @@
 (defvar *%timer-thread* nil
   "The thread firing timers, or nil while nothing is pending.")
 
+(defvar *%timer-stop* nil
+  "Set by %TIMER-SUSPEND to end the timer thread even with cells still
+pending, so M:SUSPEND can park it without clearing *%TIMER-CELLS*. Cleared
+by %TIMER-RESUME.")
+
 (defun %timer-due ()
   "The cells that have come due, waiting for the soonest one. Nil once
-nothing is pending, which ends the timer thread."
+nothing is pending or *%TIMER-STOP* is set, either of which ends the timer
+thread."
   (bt2:with-lock-held (*%timer-lock*)
     (loop for now = (%now)
-          for due = (loop while (and *%timer-cells*
-                                     (<= (timer-cell-deadline (first *%timer-cells*))
-                                         now))
-                          collect (pop *%timer-cells*))
+          for due = (unless *%timer-stop*
+                      (loop while (and *%timer-cells*
+                                       (<= (timer-cell-deadline (first *%timer-cells*))
+                                           now))
+                            collect (pop *%timer-cells*)))
           when due
             return due
-          do (if *%timer-cells*
+          do (if (and *%timer-cells* (not *%timer-stop*))
                  (bt2:condition-wait
                   *%timer-cv* *%timer-lock*
                   :timeout (float (- (timer-cell-deadline (first *%timer-cells*))
@@ -52,6 +59,30 @@ here; it runs where it can be cancelled safely."
   (bt2:with-lock-held (*%timer-lock*)
     (a:deletef *%timer-cells* cell :test #'eq)
     (bt2:condition-notify *%timer-cv*)))
+
+;;; M:SUSPEND (suspend.lisp) needs every thread meow itself owns gone,
+;;; including the timer thread -- fork refuses otherwise. *%TIMER-CELLS* is
+;;; left untouched: %NOW (clock.lisp) is monotonic across a save-lisp-and-die
+;;; reload (checked by hand against the running implementation), so a
+;;; deadline computed before a suspend still means the same wall-clock time
+;;; after RESUME restarts the thread, with no rebasing needed.
+
+(defun %timer-suspend ()
+  "Set *%TIMER-STOP*, wake the timer thread so %TIMER-DUE sees it, and wait
+for the thread to exit. Pending cells are untouched."
+  (let ((thread (bt2:with-lock-held (*%timer-lock*)
+                  (setf *%timer-stop* t)
+                  (bt2:condition-notify *%timer-cv*)
+                  *%timer-thread*)))
+    (when thread (ignore-errors (bt:join-thread thread)))))
+
+(defun %timer-resume ()
+  "Clear *%TIMER-STOP* and restart the timer thread if cells are pending --
+the same lazy start %TIMER-ADD does."
+  (bt2:with-lock-held (*%timer-lock*)
+    (setf *%timer-stop* nil)
+    (when (and *%timer-cells* (not *%timer-thread*))
+      (setf *%timer-thread* (bt:make-thread #'%timer-loop :name "meow timer")))))
 
 (defun %timer-fire (cell)
   "Run CELL's function, then re-arm it or drop it. Runs on the service's own

@@ -55,4 +55,6 @@ One thread runs every timer in the image, including the delays a
 [context](contexts.md#backoff) waits out before restarting a child. It only
 enqueues: the function itself runs on the service's process, so cancelling a
 timer cannot race the call. The thread starts with the first pending timer
-and exits when the last one is gone.
+and exits when the last one is gone -- or when [`suspend`](suspend.md)
+stops it early, leaving pending deadlines untouched for `resume` to pick
+back up.

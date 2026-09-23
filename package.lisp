@@ -22,6 +22,7 @@
    #:metadata #:ready #:dep-down #:handle #:dispose #:update-config
    #:effect #:with-effect #:with-effect-scope #:effects
    #:after #:repeat
+   #:suspend-service #:resume-service
    ;; plugins
    #:function-plugin #:mount-function
    ;; config
@@ -32,6 +33,7 @@
    #:context #:context-intensity #:context-period #:context-registry
    #:mount #:unmount #:children #:reload #:update #:intercept
    #:stop-timeout #:stop-timeout-process #:stop-timeout-seconds
+   #:suspend #:resume #:suspend-timeout #:suspend-timeout-pending
    ;; config file loader
    #:loader
    ;; delegation
