@@ -311,17 +311,20 @@
 (test stop-and-wait-blocks-until-the-thread-has-actually-exited
   (with-fresh-registry ()
     (let* ((ctx (start-context))
-           (thread (meow:process-thread ctx)))
-      (meow:mount ctx 'provider)
+           (ctx-thread (meow:process-thread ctx))
+           (child-thread (meow:process-thread (meow:mount ctx 'provider))))
       (is (eq t (meow:stop-and-wait ctx)))
-      (is (not (member thread (sb-thread:list-all-threads)))))))
+      (is (not (bt:thread-alive-p ctx-thread)))
+      (is (not (bt:thread-alive-p child-thread))))))
 
 (test stop-and-wait-reports-a-timeout-on-a-stuck-dispose
   (with-fresh-registry ()
-    (let ((p (meow:mount (start-context) 'stubborn)))
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'stubborn)))
       (is (eq :timeout (meow:stop-and-wait p :timeout 0.05)))
       (join p)
-      (is (eq :shutdown (meow:process-exit-reason p))))))
+      (is (eq :shutdown (meow:process-exit-reason p)))
+      (stop-and-join ctx))))
 
 (meow:defservice context-caller (reporting) ())
 

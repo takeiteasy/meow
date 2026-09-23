@@ -113,6 +113,13 @@
   ;; that happens to collect it, which wedged a lock elsewhere in the image
   ;; on ECL once enough piled up. Threads are apiv1 (bt:) precisely so
   ;; spawned processes never touch that table at all.
+  ;;
+  ;; A GC first (~takeiteasy/meow#67) settles BEFORE at whatever earlier
+  ;; suites left uncollected, so a GC landing mid-test can only ever lower
+  ;; the count from that already-settled baseline -- never trip this on an
+  ;; entry apiv1 spawning never touched.
+  #+sbcl (sb-ext:gc :full t)
+  #+ecl (ext:gc t)
   (let ((before (hash-table-count bt2::.known-threads.)))
     (dolist (p (loop repeat 200 collect (meow:spawn (lambda () nil))))
       (join p))

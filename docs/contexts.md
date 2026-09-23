@@ -23,6 +23,7 @@ child.
 |---|---|
 | `(mount ctx class &rest initargs &key restart shutdown backoff backoff-max)` | Start a service of `class` and return its process. `shutdown` is how many seconds it gets to stop (default 5), or `:infinity`. See [stopping](#stopping). `backoff` and `backoff-max` override the context's [restart delay](#backoff). Start errors, such as `already-registered`, are signalled in the caller. |
 | `(unmount ctx child &key timeout)` | Stop `child`, a name or process, without restarting it, waiting `timeout` seconds (default its `shutdown`, or `:infinity`). See [stopping](#stopping). Returns `t`, `:killed`, `:timeout` if it is still running, or nil if `child` isn't mounted. Signals an error if `child` is the caller. |
+| `(stop-and-wait process &key reason timeout)` | `stop` any process (a context or a plain one), not just a mounted child, and don't return until its thread has actually exited. See [stopping](#stopping). Returns `t`, `:killed`, or `:timeout` (default 5 seconds, or `:infinity`). |
 | `(children ctx)` | A plist `(:name :process :restart :state :restart-in :class)` for each child, in mount order. See [backoff](#backoff) for `:state`. |
 | `(reload ctx child &key timeout)` | Restart `child` with the same instance, or nil if `child` isn't mounted. Signals an error if `child` is the caller. See [hot reload](reload.md). |
 | `(update ctx child &rest initargs)` | Change `child`'s initargs and mount options while it runs. See [updating config](update.md). |
