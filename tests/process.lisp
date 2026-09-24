@@ -23,6 +23,24 @@
          (p (join (meow:spawn (lambda () (setf seen (meow:self)))))))
     (is (eq p seen))))
 
+(test kill-ends-a-process-blocked-outside-receive
+  (let* ((ran (bt:make-semaphore))
+         (started (bt:make-semaphore))
+         (p (meow:spawn (lambda () (bt:signal-semaphore started) (sleep 30)))))
+    (bt:wait-on-semaphore started)
+    (meow:add-exit-hook p (lambda (process reason)
+                            (declare (ignore process reason))
+                            (bt:signal-semaphore ran)))
+    (meow:kill p)
+    (is-true (bt:wait-on-semaphore ran :timeout 5))
+    (join p)
+    (is (eq :killed (meow:process-exit-reason p)))))
+
+(test kill-on-an-exited-process-does-nothing
+  (let ((p (join (meow:spawn (lambda () 42)))))
+    (is-false (meow:kill p))
+    (is (eq :normal (meow:process-exit-reason p)))))
+
 (test send-and-receive-between-processes
   (meow:with-process (me)
     (let ((echo (meow:spawn (lambda ()

@@ -211,7 +211,7 @@ PROCESS to the waiting process meanwhile return (:deadlock ...)."
                  ((bt2:wait-on-semaphore done :timeout timeout) (%join-exited process) t)
                  ;; The interrupt can leave shared state inconsistent, and
                  ;; can't reach a process already in its exit hooks.
-                 (t (%kill process)
+                 (t (kill process)
                     (when (bt2:wait-on-semaphore done :timeout timeout)
                       (%join-exited process)
                       (if (eq (process-exit-reason process) :killed) :killed t))))))

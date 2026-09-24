@@ -6,7 +6,7 @@
    ;; processes
    #:process #:process-name #:process-thread #:process-alive-p
    #:process-exit-reason
-   #:self #:spawn #:with-process #:exit #:send #:receive
+   #:self #:spawn #:with-process #:exit #:kill #:send #:receive
    #:add-exit-hook #:remove-exit-hook #:*teardown-error-hook*
    ;; call / cast
    #:call #:call-all #:call-each #:cast #:reply #:defer-reply #:stop #:serve

@@ -135,7 +135,7 @@ will see :cancelled and drop the request, never parking for it), or
       (setf (suspend-cell-state cell) :cancelled))
     (suspend-cell-state cell)))
 
-(defun %kill (process)
+(defun kill (process)
   "Interrupt PROCESS's thread to exit with :killed. Does nothing once it is
 already exiting, so its exit hooks still run."
   (ignore-errors

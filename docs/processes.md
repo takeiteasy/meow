@@ -10,6 +10,7 @@ A process is a thread with a mailbox. Services run as processes.
 | `(with-process (var &key name) body...)` | Run `body` as a process on the current thread. Errors propagate. |
 | `(self)` | The current process, or nil outside one. |
 | `(exit &optional reason)` | End the current process. |
+| `(kill p)` | Interrupt `p`'s thread to exit with `:killed`. Does nothing once `p` is already exiting, so its exit hooks still run. |
 | `(process-alive-p p)`, `(process-exit-reason p)` | Status. |
 
 Exit reasons:
