@@ -40,11 +40,15 @@ thread."
 
 (defun %timer-loop ()
   "Cast each due cell to its own process. The cell is only ever enqueued
-here; it runs where it can be cancelled safely."
+here; it runs where it can be cancelled safely. A cell with no process is a
+SCHEDULE, run here."
   (loop for due = (%timer-due)
         while due
         do (dolist (cell due)
-             (cast (timer-cell-process cell) (list '%timer-fire cell)))))
+             (if (timer-cell-process cell)
+                 (cast (timer-cell-process cell) (list '%timer-fire cell))
+                 (when (timer-cell-active cell)
+                   (ignore-errors (funcall (timer-cell-function cell))))))))
 
 (defun %timer-add (cell)
   "Queue CELL, starting the timer thread if it is not running."
@@ -128,3 +132,16 @@ delays the next one rather than queueing them. It is an effect of SERVICE,
 labelled (:REPEAT SECONDS) unless LABEL says otherwise. Returns a function
 that cancels it. Only callable from SERVICE's process."
   (%timer service seconds function seconds (or label (list :repeat seconds))))
+
+(defun schedule (seconds function)
+  "Call FUNCTION once, SECONDS from now, on the thread that fires every timer.
+FUNCTION must return quickly and is not an effect of any service: it runs
+whether or not the caller is still alive. Returns a function that cancels it,
+which cannot stop a call already under way."
+  (check-type seconds (real 0))
+  (let ((cell (%make-timer-cell nil function nil)))
+    (setf (timer-cell-deadline cell) (+ (%now) seconds))
+    (%timer-add cell)
+    (lambda ()
+      (setf (timer-cell-active cell) nil)
+      (%timer-remove cell))))

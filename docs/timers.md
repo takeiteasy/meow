@@ -23,6 +23,20 @@ Both return a function that cancels the timer.
   (funcall cancel))
 ```
 
+## Without a service
+
+`(schedule seconds function)` calls `function` once, `seconds` from now, on the
+timer thread itself. It belongs to no service, so it runs whether or not the
+caller is still alive, and `function` must return quickly. Errors in it are
+ignored. It returns a function that cancels it; one already running cannot be
+stopped.
+
+```lisp
+(let ((cancel (schedule 5 (lambda () (send watcher :expired)))))
+  ...
+  (funcall cancel))
+```
+
 ## Running
 
 `function` runs on the service's process, between messages, under the service's

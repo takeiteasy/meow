@@ -398,12 +398,13 @@ uniformly regardless of what a service's own HANDLE method does with an
 unrecognised message -- an ECASE with no otherwise clause, say.")
   (:method ((service service)) nil))
 
-(defun %agent-report-p (message)
-  "T when MESSAGE is one of the reports DELEGATE sends a parent: (:agent-done
-ref agent result) or (:agent-down ref reason). Neither shape is in
-%MESSAGE-PARTS's table, which is the call/cast wire format SERVE shares, so a
-service parent needs its own recognition of them."
-  (and (consp message) (member (first message) '(:agent-done :agent-down))))
+(defun %report-p (message)
+  "T when MESSAGE is one of the reports DELEGATE sends a parent, (:agent-done
+ref agent result) or (:agent-down ref reason), or the (:reply tag value status)
+CALL-ASYNC sends its caller. None of these shapes is in %MESSAGE-PARTS's table,
+which is the call/cast wire format SERVE shares, so a service needs its own
+recognition of them."
+  (and (consp message) (member (first message) '(:agent-done :agent-down :reply))))
 
 (defgeneric %dispatch (service message))
 
@@ -423,7 +424,7 @@ service parent needs its own recognition of them."
       (:stop (exit a))
       (:registered (%dep-up service a b))
       (:unregistered (%dep-lost service a b))
-      (t (when (%agent-report-p message) (%handle service message))))))
+      (t (when (%report-p message) (%handle service message))))))
 
 (defgeneric suspend-service (service)
   (:documentation "Called on SERVICE's own process just before it parks for

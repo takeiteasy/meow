@@ -281,3 +281,60 @@ while handling a cast, read back with :read-probe."
     (is (equal '(nil :timeout)
                (multiple-value-list (meow:call s :never :timeout 0.1))))
     (stop-and-join s)))
+
+;;; --- call-async -----------------------------------------------------------
+
+(defun async-reply (&optional (timeout 1))
+  (meow:receive :timeout timeout))
+
+(test call-async-delivers-the-reply-as-a-message
+  (as-process
+    (let ((s (test-server)))
+      (is (null (meow:call-async s 21 :tag :answer)))
+      (is (equal '(:reply :answer 42 nil) (async-reply)))
+      (stop-and-join s))))
+
+(test call-async-times-out-and-leaves-target-running
+  (as-process
+    (let ((s (test-server))
+          (start (now)))
+      (meow:call-async s '(:sleep 0.3) :timeout 0.05 :tag :slow)
+      (is (equal '(:reply :slow nil :timeout) (async-reply)))
+      (is (< (- (now) start) 0.25))
+      (is-true (meow:process-alive-p s))
+      (stop-and-join s))))
+
+(test call-async-settles-as-down-when-the-target-exits
+  (as-process
+    (let ((s (meow:serve (lambda (msg) (declare (ignore msg)) (meow:exit :bye)))))
+      (meow:call-async s :go :tag :dying)
+      (is (equal '(:reply :dying nil (:down :bye)) (async-reply)))
+      (join s))))
+
+(test call-async-to-an-exited-target-settles-as-down
+  (as-process
+    (let ((s (test-server)))
+      (stop-and-join s)
+      (meow:call-async s 1 :tag :late)
+      (destructuring-bind (tag ref value status) (async-reply)
+        (is (eq :reply tag))
+        (is (eq :late ref))
+        (is (null value))
+        (is (eq :down (first status)))))))
+
+(test call-async-leaves-no-timer-behind-once-settled
+  (as-process
+    (let ((s (test-server)))
+      (meow:call-async s 1 :timeout 30)
+      (async-reply)
+      (is (null meow::*%timer-cells*))
+      (stop-and-join s))))
+
+(test call-async-does-not-hold-the-caller-up
+  (as-process
+    (let ((s (test-server))
+          (start (now)))
+      (meow:call-async s '(:sleep 0.2) :tag :slow)
+      (is (< (- (now) start) 0.1))
+      (is (equal '(:reply :slow :slept nil) (async-reply)))
+      (stop-and-join s))))

@@ -9,7 +9,7 @@
    #:self #:spawn #:with-process #:exit #:kill #:send #:receive
    #:add-exit-hook #:remove-exit-hook #:*teardown-error-hook*
    ;; call / cast
-   #:call #:call-all #:call-each #:cast #:reply #:defer-reply #:forward #:stop #:serve
+   #:call #:call-async #:call-all #:call-each #:cast #:reply #:defer-reply #:forward #:stop #:serve
    ;; registry
    #:registry #:*registry* #:already-registered
    #:already-registered-name #:already-registered-owner
@@ -22,7 +22,7 @@
    #:service-dependencies #:dependency
    #:metadata #:ready #:dep-down #:handle #:dispose #:update-config
    #:effect #:with-effect #:with-effect-scope #:effects
-   #:after #:repeat
+   #:after #:repeat #:schedule
    #:suspend-service #:resume-service
    ;; plugins
    #:function-plugin #:mount-function

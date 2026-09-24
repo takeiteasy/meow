@@ -9,7 +9,9 @@
   ;; Set by DEFER-REPLY's :UNTIL, so REPLY can drop the exit hook once the
   ;; cell is answered rather than leaking it for the process's lifetime.
   (defer-hook nil)
-  (defer-process nil))
+  (defer-process nil)
+  ;; Set by CALL-ASYNC: run once, outside the lock, as the cell settles.
+  (on-settle nil))
 
 (defvar *%caller* nil
   "The process whose call is being handled, if any.")
@@ -25,11 +27,13 @@ value.")
 
 (defun %settle (cell state value)
   "Fill CELL once; later settlements are ignored."
-  (bt2:with-lock-held ((reply-cell-lock cell))
-    (when (eq (reply-cell-state cell) :pending)
-      (setf (reply-cell-state cell) state
-            (reply-cell-value cell) value)
-      (bt2:condition-notify (reply-cell-cv cell))))
+  (let ((on-settle (bt2:with-lock-held ((reply-cell-lock cell))
+                     (when (eq (reply-cell-state cell) :pending)
+                       (setf (reply-cell-state cell) state
+                             (reply-cell-value cell) value)
+                       (bt2:condition-notify (reply-cell-cv cell))
+                       (reply-cell-on-settle cell)))))
+    (when on-settle (funcall on-settle)))
   nil)
 
 (defun reply (cell value)
@@ -193,12 +197,16 @@ that leave PROCESS waiting on it are settled as deadlocks first."
       (%wait-until (reply-cell-lock cell) (reply-cell-cv cell)
                    (lambda () (not (eq (reply-cell-state cell) :pending)))
                    timeout))
-    (ecase (reply-cell-state cell)
-      (:value (values (reply-cell-value cell) nil))
-      (:down (values nil (list :down (reply-cell-value cell))))
-      (:error (values nil (list :error (reply-cell-value cell))))
-      (:deadlock (values nil (list :deadlock (reply-cell-value cell))))
-      (:pending (values nil :timeout)))))
+    (%cell-result cell)))
+
+(defun %cell-result (cell)
+  "CELL's state as CALL's two values."
+  (ecase (reply-cell-state cell)
+    (:value (values (reply-cell-value cell) nil))
+    (:down (values nil (list :down (reply-cell-value cell))))
+    (:error (values nil (list :error (reply-cell-value cell))))
+    (:deadlock (values nil (list :deadlock (reply-cell-value cell))))
+    ((:pending :timeout) (values nil :timeout))))
 
 (defun call (process message &key (timeout 5))
   "Send MESSAGE to PROCESS as (:call cell message) and wait for the reply.
@@ -217,6 +225,29 @@ is broken the same way."
                (%await-call (%send-call pending message) timeout)
                (values nil (list :deadlock pending))))
       (%end-calls calls))))
+
+(defun call-async (process message &key (timeout 5) tag)
+  "Send MESSAGE to PROCESS as CALL does, without waiting. When the call
+settles, (:REPLY TAG VALUE STATUS) is sent to the calling process, VALUE and
+STATUS being CALL's two values. The wait has no thread: TIMEOUT (nil waits
+forever) is a scheduled settle, and a PROCESS that exits first settles it as
+(:down reason). Nothing waits on PROCESS, so a call that CALL would refuse as a
+deadlock is sent, and (:deadlock ...) is never a status. Only callable from a
+process."
+  (let* ((caller (%require-self))
+         (pending (%make-pending-call process))
+         (cell (pending-call-cell pending))
+         (cancel-timer nil))
+    (setf (reply-cell-on-settle cell)
+          (lambda ()
+            (%cancel-call pending)
+            (when cancel-timer (funcall cancel-timer))
+            (multiple-value-bind (value status) (%cell-result cell)
+              (send caller (list :reply tag value status)))))
+    (when timeout
+      (setf cancel-timer (schedule timeout (lambda () (%settle cell :timeout nil)))))
+    (%send-call pending message)
+    nil))
 
 (defun call-each (processes messages &key (timeout 5))
   "CALL each of MESSAGES on the process at the same position in PROCESSES, all

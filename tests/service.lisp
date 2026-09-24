@@ -51,6 +51,15 @@
         (:skip (handler-bind ((error #'meow:skip-message))
                  (error "skipped"))))))
 
+(meow:defservice asker (reporting) ())
+
+(defmethod meow:handle ((s asker) message)
+  (ecase (first message)
+    (:ask (meow:call-async (second message) (third message) :tag :answer :timeout 1)
+     :asked)
+    (:reply (apply #'report s message)
+     :ok)))
+
 (defun start (class &rest initargs)
   (let ((service (apply #'make-instance class :reporter (meow:self) initargs)))
     (values (meow:start-service service) service)))
@@ -227,6 +236,15 @@
         (is (typep condition 'simple-error)))
       (is (eq :pong (meow:call p :ping)))
       (stop-and-join p))))
+
+(test a-service-handles-the-reply-to-its-own-call-async
+  (with-fresh-registry ()
+    (let ((provider (start 'provider))
+          (asker (start 'asker)))
+      (is (eq :asked (meow:call asker (list :ask provider '(:echo 7)))))
+      (is-true (member '(asker :reply :answer 7 nil) (drain) :test #'equal))
+      (stop-and-join asker)
+      (stop-and-join provider))))
 
 (test debug-flag-is-captured-at-start
   (with-fresh-registry ()

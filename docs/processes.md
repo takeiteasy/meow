@@ -84,6 +84,29 @@ straight away.
 `(call-each processes messages &key (timeout 5))` is the same with one
 message per process, taken from `messages` in the same order.
 
+## Calling without waiting
+
+`(call-async process msg &key (timeout 5) tag)` sends the call and returns at
+once. When it settles, `(:reply tag value status)` arrives in the calling
+process's mailbox, `value` and `status` being `call`'s two values:
+
+```lisp
+(call-async *doubler* 21 :tag :twice)
+(receive)   ; => (:reply :twice 42 nil)
+```
+
+`status` is nil, `:timeout` after `timeout` seconds (nil waits forever),
+`(:down reason)` if `process` exits first or had already exited, or
+`(:error condition)`. No thread waits meanwhile, so a process can keep many
+calls in flight and keep handling messages.
+
+Only callable from a process. A [service](services.md) receives the reply in
+`handle`; a plain process reads it with `receive`. `serve` drops it, since it
+is not a call or cast.
+
+Nothing waits on `process`, so no [deadlock](#deadlocks) is recorded and
+`(:deadlock ...)` is never a status: a call that `call` would refuse is sent.
+
 ## Deferred replies
 
 `(defer-reply &key until)`, called inside `handle` (or a `serve` handler)

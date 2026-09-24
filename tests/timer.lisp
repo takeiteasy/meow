@@ -121,3 +121,29 @@
       (stop-and-join p))
     (is-true (eventually (lambda () (null meow::*%timer-thread*))))
     (is (null meow::*%timer-cells*))))
+
+(test schedule-runs-a-function-once-on-the-timer-thread
+  (as-process
+    (let ((me (meow:self))
+          (started (now)))
+      (meow:schedule 0.1 (lambda () (meow:send me (list :fired (now) (bt:current-thread)))))
+      (destructuring-bind (tag at thread) (meow:receive :timeout 1)
+        (is (eq :fired tag))
+        (is-true (waited-p 0.1 (- at started)))
+        (is (equal "meow timer" (bt:thread-name thread))))
+      (is (null (meow:receive :timeout 0.2)) "it does not fire again"))))
+
+(test schedule-can-be-cancelled
+  (as-process
+    (let* ((me (meow:self))
+           (cancel (meow:schedule 0.1 (lambda () (meow:send me :fired)))))
+      (funcall cancel)
+      (is (null meow::*%timer-cells*))
+      (is (null (meow:receive :timeout 0.25))))))
+
+(test a-failing-scheduled-function-leaves-the-timer-thread-running
+  (as-process
+    (let ((me (meow:self)))
+      (meow:schedule 0.05 (lambda () (error "boom")))
+      (meow:schedule 0.1 (lambda () (meow:send me :still-here)))
+      (is (eq :still-here (meow:receive :timeout 1))))))
