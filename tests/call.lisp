@@ -223,6 +223,59 @@ while handling a cast, read back with :read-probe."
                (multiple-value-list (meow:call s (list :defer-until until)))))
     (stop-and-join s)))
 
+;;; --- forward -------------------------------------------------------------
+
+(defun forwarding-server (target)
+  "A server that forwards (:fwd x) to TARGET as (:got x)."
+  (meow:serve (lambda (msg)
+                (if (eq (first msg) :fwd)
+                    (meow:forward target (list :got (second msg)))
+                    (list :forwarded (meow:forward target msg))))))
+
+(test forward-is-answered-by-the-target
+  (let* ((target (meow:serve (lambda (msg) (list :answered msg))))
+         (s (forwarding-server target)))
+    (is (equal '((:answered (:got 7)) nil)
+               (multiple-value-list (meow:call s '(:fwd 7)))))
+    (stop-and-join s)
+    (stop-and-join target)))
+
+(test forward-settles-down-when-the-target-exits-unanswered
+  (let* ((target (meow:spawn (lambda () (meow:receive))))
+         (s (forwarding-server target)))
+    (is (equal '(nil (:down :normal))
+               (multiple-value-list (meow:call s '(:fwd 7)))))
+    (stop-and-join s)))
+
+(test forward-to-an-exited-process-settles-down-at-once
+  (let* ((target (meow:spawn (lambda ())))
+         (s (forwarding-server target)))
+    (is-true (eventually (lambda () (not (meow:process-alive-p target)))))
+    (is (eq :down (first (second (multiple-value-list
+                                  (meow:call s '(:fwd 7) :timeout 1))))))
+    (stop-and-join s)))
+
+(test forward-inside-a-cast-sends-nothing
+  (let* ((seen nil)
+         (target (meow:serve (lambda (msg) (setf seen msg))))
+         (s (forwarding-server target)))
+    (meow:cast s '(:probe))
+    (sleep 0.1)
+    (is (null seen))
+    (stop-and-join s)
+    (stop-and-join target)))
+
+(test a-forwarded-cell-can-be-deferred-again
+  (let* ((target (meow:serve
+                  (lambda (msg)
+                    (let ((cell (meow:defer-reply)))
+                      (meow:spawn (lambda () (sleep 0.05) (meow:reply cell msg)))
+                      nil))))
+         (s (forwarding-server target)))
+    (is (equal '((:got 3) nil) (multiple-value-list (meow:call s '(:fwd 3)))))
+    (stop-and-join s)
+    (stop-and-join target)))
+
 (test deferred-call-nobody-answers-times-out
   (let ((s (meow:serve (lambda (msg) (declare (ignore msg)) (meow:defer-reply)))))
     (is (equal '(nil :timeout)

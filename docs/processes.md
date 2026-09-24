@@ -122,6 +122,26 @@ for a reply that has been handed off to another process:
 Without `:until`, a handoff to a process that then crashes leaves the cell
 pending, and the caller's own `call` times out instead of seeing `:down`.
 
+### Forwarding
+
+`(forward process message)`, called inside `handle` while a `:call` is
+delivered, hands the call on whole: `process` receives an ordinary
+`(:call cell message)` carrying the original caller's cell, and answers that
+caller directly, as if it had been called. A router holds no thread while
+the call runs:
+
+```lisp
+(defmethod handle ((s router) message)
+  (case (first message)
+    (:ask (forward (backend s) (list :answer (second message))))))
+```
+
+The cell settles as `(:down reason)` if `process` exits before answering, as
+with `defer-reply :until`. `process` may defer the forwarded call again.
+Called during a `:cast`, `forward` sends nothing and returns nil. The caller
+stays recorded as waiting on the forwarding process, not `process`, for
+[deadlock](#deadlocks) detection.
+
 ## Deadlocks
 
 Each process waiting in `call` or a waiting [emit](events.md) is recorded

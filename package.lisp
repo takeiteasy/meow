@@ -9,7 +9,7 @@
    #:self #:spawn #:with-process #:exit #:kill #:send #:receive
    #:add-exit-hook #:remove-exit-hook #:*teardown-error-hook*
    ;; call / cast
-   #:call #:call-all #:call-each #:cast #:reply #:defer-reply #:stop #:serve
+   #:call #:call-all #:call-each #:cast #:reply #:defer-reply #:forward #:stop #:serve
    ;; registry
    #:registry #:*registry* #:already-registered
    #:already-registered-name #:already-registered-owner

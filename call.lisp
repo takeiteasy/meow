@@ -52,6 +52,10 @@ that never replies leaves every waiting CALL to time out on its own."
   (a:when-let ((cell *%current-cell*))
     (setf *%deferred-p* t)
     (when until
+      ;; A cell forwarded here may already carry an earlier process's hook.
+      (a:when-let ((earlier (reply-cell-defer-hook cell)))
+        (remove-exit-hook (reply-cell-defer-process cell) earlier)
+        (setf (reply-cell-defer-hook cell) nil))
       (let ((hook (add-exit-hook until (lambda (process reason)
                                           (declare (ignore process))
                                           (%settle cell :down reason)))))
@@ -62,6 +66,17 @@ that never replies leaves every waiting CALL to time out on its own."
             ;; does for a target that is already gone.
             (%settle cell :down (process-exit-reason until)))))
     cell))
+
+(defun forward (process message)
+  "Call inside HANDLE, while handling a :call, to hand the call on to PROCESS
+as (:call cell MESSAGE): PROCESS answers the original caller directly, and
+the cell settles as (:down reason) if PROCESS exits first, as DEFER-REPLY's
+:UNTIL does. The caller is still recorded as waiting on this process, not
+PROCESS. Returns true, or nil inside a :cast, which has no call to forward."
+  (a:when-let ((cell (defer-reply :until process)))
+    (when (%cell-pending-p cell)
+      (send process (list :call cell message)))
+    t))
 
 (defstruct (pending-call (:constructor %make-pending-call (process)))
   process (cell (%make-reply-cell)) hook)
