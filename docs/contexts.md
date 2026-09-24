@@ -25,6 +25,7 @@ child.
 | `(unmount ctx child &key timeout)` | Stop `child`, a name or process, without restarting it, waiting `timeout` seconds (default its `shutdown`, or `:infinity`). See [stopping](#stopping). Returns `t`, `:killed`, `:timeout` if it is still running, or nil if `child` isn't mounted. Signals an error if `child` is the caller. |
 | `(stop-and-wait process &key reason timeout)` | `stop` any process (a context or a plain one), not just a mounted child, and don't return until its thread has actually exited. See [stopping](#stopping). Returns `t`, `:killed`, or `:timeout` (default 5 seconds, or `:infinity`). |
 | `(children ctx)` | A plist `(:name :process :restart :state :restart-in :class)` for each child, in mount order. See [backoff](#backoff) for `:state`. |
+| `(child-spec ctx child)` | What `child`, a name or process, was mounted with: a plist `(:class :initargs :restart :shutdown :backoff :backoff-max)`, or nil if it isn't mounted. `:initargs` may hold a credential, so `children` leaves it out. |
 | `(reload ctx child &key timeout)` | Restart `child` with the same instance, or nil if `child` isn't mounted. Signals an error if `child` is the caller. See [hot reload](reload.md). |
 | `(update ctx child &rest initargs)` | Change `child`'s initargs and mount options while it runs. See [updating config](update.md). |
 | `(intercept ctx head &rest initargs)` | Set config for matching children in the subtree. See [intercepts](intercept.md). |

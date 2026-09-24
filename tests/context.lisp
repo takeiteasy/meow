@@ -1028,3 +1028,28 @@ killed if :infinity were ignored."
       (is (not (eq inner new)) "an entry with no name cannot be diffed")
       (is (= 2 (meow:call (child-process new nil) :level)))
       (stop-and-join ctx))))
+
+(test child-spec-reports-what-a-child-was-mounted-with
+  (with-fresh-registry ()
+    (let* ((ctx (start-context))
+           (p (meow:mount ctx 'provider :restart :permanent :shutdown 9 :backoff 2)))
+      (let ((spec (meow:child-spec ctx 'provider)))
+        (is (eq 'provider (getf spec :class)))
+        (is (equal '(:permanent 9 2 nil)
+                   (list (getf spec :restart) (getf spec :shutdown)
+                         (getf spec :backoff) (getf spec :backoff-max))))
+        (is (null (getf spec :initargs)) "mount options are not initargs"))
+      (is (equal (meow:child-spec ctx 'provider) (meow:child-spec ctx p))
+          "a name or a process finds the same child")
+      (is (null (meow:child-spec ctx :nope)))
+      (stop-and-join ctx))))
+
+(test child-spec-carries-initargs
+  (with-fresh-registry ()
+    (let ((ctx (start-context)))
+      (meow:mount ctx 'meow:context :name :inner :intensity 3)
+      (is (equal '(:name :inner :intensity 3)
+                 (getf (meow:child-spec ctx :inner) :initargs)))
+      (is (null (search "initargs" (prin1-to-string (first (meow:children ctx)))))
+          "children does not report them")
+      (stop-and-join ctx))))

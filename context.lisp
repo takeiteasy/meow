@@ -138,6 +138,14 @@ in mount order. STATE is :restarting while the child waits out its restart
 delay, with RESTART-IN the seconds left, and :running otherwise."
   (%context-call context (list '%children)))
 
+(defun child-spec (context child)
+  "What CHILD of CONTEXT, a name or process, was mounted with, as a plist
+(:class :initargs :restart :shutdown :backoff :backoff-max), or nil if CHILD
+is not mounted. INITARGS is as given to MOUNT or updated since, without the
+mount options and before any intercept; it may hold a credential, which is why
+CHILDREN leaves it out."
+  (%context-call context (list '%child-spec child)))
+
 (defun reload (context child &key timeout)
   "Stop CHILD of CONTEXT, a name or process, with reason :reload, then
 reinitialize its instance with the initargs it was mounted with and start it
@@ -682,6 +690,15 @@ effect of CONTEXT, so a stopped context drops it."
                            (float (max 0 (- (first pending) (%now))) 1.0))
           :class (child-class child))))
 
+(defun %child-spec (context target)
+  (a:when-let ((child (%find-child context target)))
+    (list :class (child-class child)
+          :initargs (copy-list (child-initargs child))
+          :restart (child-restart child)
+          :shutdown (child-shutdown child)
+          :backoff (child-backoff child)
+          :backoff-max (child-backoff-max child))))
+
 (defmethod %tree-children ((context context))
   (mapcar (lambda (child)
             (list :process (child-process child) :service (child-service child)))
@@ -695,6 +712,7 @@ effect of CONTEXT, so a stopped context drops it."
       (%mount (%mount context a b))
       (%unmount (%unmount context a b))
       (%children (mapcar #'%child-info (slot-value context 'children)))
+      (%child-spec (%child-spec context a))
       (%reload (%reload context a b))
       (%update (%update context a b c))
       (%intercept (%intercept context a b))
