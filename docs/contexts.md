@@ -112,6 +112,14 @@ A restart makes a fresh instance from `class` and `initargs`.
 A child that exits and isn't restarted is removed from `children`. The
 exit of a [reloaded](reload.md) child's old process is ignored.
 
+`(will-restart-p service reason)` tells a service, from `dispose`, whether a
+fresh instance follows its exit with `reason`: it is still mounted, and it is
+being reloaded or its current `:restart` asks for one.[^limit]
+
+[^limit]: A context that hits its restart limit exits instead, and a
+    `:permanent` child stopped with `:shutdown` by its context's own stop is
+    reported as restarting.
+
 ## Backoff
 
 A context waits `:restart-delay` seconds (default 0) before each

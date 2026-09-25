@@ -307,6 +307,7 @@ of CONTEXT and its ancestors. Nearer contexts and later entries win."
   (let* ((config (%child-config context child))
          (service (apply #'make-instance (child-class child) config)))
     (setf (slot-value service 'context) context
+          (slot-value service 'child) child
           (child-service child) service
           (child-config child) config))
   (%run-child context child))
@@ -608,6 +609,20 @@ the errors from applying them."
     (:permanent t)
     (:transient (not (member reason '(:normal :shutdown))))
     (:temporary nil)))
+
+(defun will-restart-p (service reason)
+  "True if SERVICE's context will restart it after it exits with REASON: it is
+still mounted and either it is being reloaded or its current :restart policy
+asks for one. Meant for DISPOSE,
+to tell an exit that ends the service from one that is followed by a fresh
+instance. A service not mounted on a context answers nil."
+  (let ((child (slot-value service 'child))
+        (context (service-context service)))
+    (and child
+         (member child (slot-value context 'children))
+         (or (eq reason :reload)
+             (%restart-p (child-restart child) reason))
+         t)))
 
 (defun %note-restart (context)
   "Record a restart, exiting with :restart-limit when more than intensity

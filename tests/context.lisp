@@ -1053,3 +1053,49 @@ killed if :infinity were ignored."
       (is (null (search "initargs" (prin1-to-string (first (meow:children ctx)))))
           "children does not report them")
       (stop-and-join ctx))))
+
+(meow:defservice probing (reporting) ())
+
+(defmethod meow:dispose ((service probing) reason)
+  (report service :will-restart reason (meow:will-restart-p service reason)))
+
+(defun will-restart-answer (context restart reason &optional after-mount)
+  "What DISPOSE hears from WILL-RESTART-P when a probing child mounted with
+RESTART exits with REASON. AFTER-MOUNT is called with CONTEXT once mounted."
+  (let ((p (meow:mount context 'probing :restart restart :reporter (meow:self))))
+    (drain)
+    (when after-mount (funcall after-mount context))
+    (meow:stop p reason)
+    (let ((message (loop for m = (meow:receive :timeout 2)
+                         while m
+                         when (eq :will-restart (second m)) return m)))
+      (third (cdr message)))))
+
+(test will-restart-p-follows-the-restart-policy
+  (loop for (restart reason expected)
+          in '((:permanent :normal t) (:permanent :killed t)
+               (:transient :normal nil) (:transient :shutdown nil)
+               (:transient :killed t)
+               (:temporary :done nil) (:temporary :killed nil)
+               (:temporary :reload t))
+        do (with-fresh-registry ()
+             (let ((ctx (start-context)))
+               (is (eq expected (will-restart-answer ctx restart reason))
+                   "~s ~s" restart reason)
+               (stop-and-join ctx)))))
+
+(test will-restart-p-reads-the-current-policy
+  (with-fresh-registry ()
+    (let ((ctx (start-context)))
+      (is (eq t (will-restart-answer
+                 ctx :temporary :killed
+                 (lambda (ctx) (meow:update ctx 'probing :restart :permanent)))))
+      (stop-and-join ctx))))
+
+(test will-restart-p-is-nil-for-an-unmounted-service
+  (with-fresh-registry ()
+    (let ((ctx (start-context)))
+      (meow:mount ctx 'probing :restart :permanent :reporter (meow:self))
+      (drain)
+      (meow:unmount ctx 'probing)
+      (is (eq nil (third (cdr (find :will-restart (drain) :key #'second))))))))

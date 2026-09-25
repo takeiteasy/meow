@@ -18,7 +18,7 @@
    ;; services
    #:service #:defservice #:start-service
    #:service-name #:service-registry #:service-context #:service-process #:service-ready-p #:service-status
-   #:service-of
+   #:service-of #:will-restart-p
    #:service-dependencies #:dependency
    #:metadata #:init #:ready #:dep-down #:handle #:dispose #:update-config
    #:effect #:with-effect #:with-effect-scope #:effects
