@@ -10,7 +10,7 @@
   "Run BODY with *SOURCES* a fresh directory, then remove it and forget
 CLASSES, so one test's sources aren't watched by the next."
   `(let ((*sources* (uiop:ensure-directory-pathname
-                     (merge-pathnames (symbol-name (gensym "meow-hmr-"))
+                     (merge-pathnames (format nil "meow-hmr-~36r" (random (expt 2 64) (make-random-state t)))
                                       (uiop:temporary-directory)))))
      (ensure-directories-exist *sources*)
      (unwind-protect (progn ,@body)
