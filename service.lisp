@@ -163,10 +163,14 @@ problem strings."
               `(%remove-option-method '%config-problems '(append) ',name))
          (find-class ',name)))))
 
-(defun service-status (service)
-  "SERVICE's lifecycle state: :starting, :waiting, :ready, :stopping or
-:stopped."
-  (slot-value service 'status))
+(defun service-status (target &key (timeout 5))
+  "The lifecycle state of TARGET, a service or its process: :starting,
+:waiting, :ready, :stopping or :stopped. A service is read directly. A process
+is asked over a call, so it only ever answers :waiting or :ready -- a process
+that has stopped taking messages returns (values nil status) as CALL does."
+  (if (typep target 'service)
+      (slot-value target 'status)
+      (call target (list '%status) :timeout timeout)))
 
 (defun service-ready-p (service)
   (eq (slot-value service 'status) :ready))
@@ -382,6 +386,8 @@ it signalled."
          (apply #'%apply-config service (rest message)))
         ((and (a:proper-list-p message) (eq (first message) '%effects))
          (%effect-labels service))
+        ((and (a:proper-list-p message) (eq (first message) '%status))
+         (slot-value service 'status))
         ((and (a:proper-list-p message) (eq (first message) '%timer-fire))
          (%timer-fire (second message)))
         ((and (a:proper-list-p message) (eq (first message) '%service-self))

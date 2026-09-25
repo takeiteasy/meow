@@ -60,6 +60,16 @@ running as `process`, fetched over a call from outside it.
 | `:stopping` | Effects are unwinding and `dispose` is running. |
 | `:stopped` | Gone. A [reload](reload.md) announces `:starting` again for the same instance, with a process of nil until the new one runs. |
 
+`(service-status process)` asks a running service's process instead, over a
+call, and returns as `call` does. It only ever answers `:waiting` or
+`:ready`: `:stopping` and `:stopped` are set once the process has stopped
+taking messages, so a stopped process returns nil and a `(:down reason)`
+status. It takes a `:timeout` (default 5 seconds).
+
+```lisp
+(service-status (service-process s) :timeout 1) ; => :ready
+```
+
 Each change is announced on the service's root [registry](registry.md)'s
 event bus as `:meow/status` with the service's name, its process, the old
 state and the new one:

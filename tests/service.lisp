@@ -335,3 +335,19 @@
       (stop-and-join p)
       (is (eq :stopped (meow:service-status s)))
       (is-false (meow:service-ready-p s)))))
+
+(test service-status-reads-across-processes
+  (with-fresh-registry ()
+    (let ((p (start 'tracked :name :t)))
+      (drain)
+      (is (eq :ready (meow:service-status p)))
+      (stop-and-join p)
+      (multiple-value-bind (status reason) (meow:service-status p)
+        (is (null status))
+        (is (eq :down (first reason)))))))
+
+(test service-status-of-a-service-with-a-missing-dependency-is-waiting
+  (with-fresh-registry ()
+    (let ((p (start 'consumer :name :c)))
+      (is (eq :waiting (meow:service-status p)))
+      (stop-and-join p))))
