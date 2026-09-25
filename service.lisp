@@ -22,6 +22,11 @@ the service stops. START-SERVICE captures the value.")
   (:documentation "A plist published as SERVICE's registration props.")
   (:method ((service service)) '()))
 
+(defgeneric init (service)
+  (:documentation "Called on SERVICE's process once it is registered and
+started, before START-SERVICE returns. An error fails the start.")
+  (:method ((service service)) nil))
+
 (defgeneric ready (service)
   (:documentation "Called once every dependency is registered.")
   (:method ((service service)) nil))
@@ -339,6 +344,7 @@ runs before the registry's unregister hook."
     (dolist (name (service-dependencies service))
       (subscribe name :registry registry))
     (%startup service)
+    (init service)
     (%set-status service :waiting)))
 
 (defun skip-message (&optional condition)

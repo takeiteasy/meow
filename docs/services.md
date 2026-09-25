@@ -31,6 +31,7 @@ Specialise any of these generic functions. Each has a no-op default.
 | Generic function | Called |
 |---|---|
 | `(metadata s)` | At registration. Returns a plist that is published as the registration props. |
+| `(init s)` | On the service's process once it is registered, before `start-service` returns. An error fails the start, and `dispose` still runs. |
 | `(ready s)` | When every dependency is registered. It fires again after a lost dependency comes back. |
 | `(dep-down s name reason)` | When dependency `name` leaves a ready service. |
 | `(handle s message)` | For each `call` or `cast`. The return value is the reply to a `call`, unless `handle` calls `defer-reply` (see [processes](processes.md#deferred-replies)) and answers it later with `reply`. |

@@ -203,6 +203,29 @@
       (is (eq p (meow:lookup 'provider)))
       (stop-and-join p))))
 
+(meow:defservice initing (reporting) ()
+  (:name :initing))
+
+(defvar *init-fails* nil)
+
+(defmethod meow:init ((s initing))
+  (when *init-fails* (error "init failed"))
+  (report s :init (eq (meow:self) (meow:lookup :initing :registry (meow:service-registry s)))))
+
+(test init-runs-on-the-service-process-once-registered
+  (with-fresh-registry ()
+    (let ((p (start 'initing)))
+      (is (equal '(:initing :init t) (meow:receive :timeout 1)))
+      (stop-and-join p))))
+
+(test init-error-fails-the-start
+  (with-fresh-registry ()
+    (setf *init-fails* t)
+    (unwind-protect (signals error (start 'initing))
+      (setf *init-fails* nil))
+    (drain)
+    (is (null (meow:lookup :initing)))))
+
 (test nil-name-is-not-registered
   (with-fresh-registry ()
     (let ((p (start 'provider :name nil)))
